@@ -57,8 +57,10 @@ function sortLibrary() {
 async function loadGridPage(page = 0) {
     const q = document.getElementById('lib-filter').value.trim();
     const sort = document.getElementById('lib-sort').value;
+    const format = (document.getElementById('lib-format') || {}).value || '';
     currentPage = page;
     const params = new URLSearchParams({ q, page, size: PAGE_SIZE, sort });
+    if (format) params.set('format', format);
     const resp = await fetch(`/api/library?${params}`);
     const data = await resp.json();
     const totalPages = Math.ceil((data.total || 0) / PAGE_SIZE);
@@ -98,6 +100,20 @@ function goPage(p) {
     document.getElementById('library-section').scrollIntoView({ behavior: 'smooth' });
 }
 
+function formatBadge(fmt) {
+    if (fmt === 'sloppak') {
+        return `<span class="fmt-badge absolute top-2 right-2 px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-900/80 text-green-200 border border-green-700">SLOPPAK</span>`;
+    }
+    return `<span class="fmt-badge absolute top-2 right-2 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-900/80 text-blue-200 border border-blue-700">PSARC</span>`;
+}
+
+function formatBadgeInline(fmt) {
+    if (fmt === 'sloppak') {
+        return `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-900/60 text-green-300">SLOPPAK</span>`;
+    }
+    return `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-900/60 text-blue-300">PSARC</span>`;
+}
+
 function renderGridCards(songs, containerId = 'lib-grid') {
     const grid = document.getElementById(containerId);
     grid.innerHTML = songs.map(s => {
@@ -119,10 +135,12 @@ function renderGridCards(songs, containerId = 'lib-grid') {
                 class="retune-btn mt-2 w-full px-2 py-1.5 bg-gold/10 hover:bg-gold/20 border border-gold/20 rounded-lg text-xs font-medium text-gold transition">
                 ⬆ Convert to Drop D</button>`
             : '';
+        const fmtBadge = formatBadge(s.format);
         return `<div class="song-card group" data-play="${encodeURIComponent(s.filename)}">
             <div class="card-art">
                 <img src="${artUrl}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
                 <span class="placeholder" style="display:none">🎸</span>
+                ${fmtBadge}
             </div>
             <div class="p-4">
                 <div class="flex items-start justify-between gap-1">
@@ -196,6 +214,8 @@ async function renderTreeInto(containerId, countId, stats, letter, q, favoritesO
     if (letter) params.set('letter', letter);
     if (q) params.set('q', q);
     if (favoritesOnly) params.set('favorites', '1');
+    const format = (document.getElementById('lib-format') || {}).value || '';
+    if (format) params.set('format', format);
     params.set('page', page);
     params.set('size', TREE_PAGE_SIZE);
     const resp = await fetch(`/api/library/artists?${params}`);
@@ -241,7 +261,7 @@ async function renderTreeInto(containerId, countId, stats, letter, q, favoritesO
                 const canRetune = stdRetune || dropRetune;
                 const retuneTarget = stdRetune ? 'E Standard' : 'Drop D';
                 html += `<div class="song-row" data-play="${encodeURIComponent(s.filename)}">`;
-                html += `<div class="flex-1 min-w-0"><span class="text-sm text-white truncate block">${esc(title)}</span></div>`;
+                html += `<div class="flex-1 min-w-0 flex items-center gap-2"><span class="text-sm text-white truncate block">${esc(title)}</span>${formatBadgeInline(s.format)}</div>`;
                 html += `<div class="flex items-center gap-1.5 flex-shrink-0 text-xs">`;
                 for (const a of (s.arrangements || [])) {
                     const cls = a.name === 'Lead' ? 'bg-red-900/40 text-red-300' :
@@ -1125,6 +1145,7 @@ async function loadPlugins() {
         }
 
         for (const plugin of plugins) {
+            try {
             const screenId = `plugin-${plugin.id}`;
 
             // Inject screen container
@@ -1159,6 +1180,9 @@ async function loadPlugins() {
                     script.onerror = reject;
                     document.body.appendChild(script);
                 });
+            }
+            } catch (e) {
+                console.warn(`Plugin '${plugin.id}' failed to load, skipping:`, e);
             }
         }
     } catch (e) {

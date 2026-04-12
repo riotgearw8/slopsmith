@@ -95,6 +95,122 @@ class Song:
     sections: list[Section] = field(default_factory=list)
     arrangements: list[Arrangement] = field(default_factory=list)
     audio_path: str = ""
+    # Optional lyrics, one entry per syllable: {"t": float, "d": float, "w": str}
+    lyrics: list[dict] = field(default_factory=list)
+
+
+# ── Wire format serialization (shared between highway_ws and sloppak loader) ──
+#
+# These helpers produce/consume the same JSON shape the highway WebSocket streams
+# to the client. They are the authoritative definition of the `.sloppak`
+# arrangement file format — see `arrangements/*.json` inside a sloppak.
+
+def note_to_wire(n: Note) -> dict:
+    return {
+        "t": round(n.time, 3), "s": n.string, "f": n.fret,
+        "sus": round(n.sustain, 3),
+        "sl": n.slide_to, "slu": n.slide_unpitch_to,
+        "bn": round(n.bend, 1) if n.bend else 0,
+        "ho": n.hammer_on, "po": n.pull_off,
+        "hm": n.harmonic, "hp": n.harmonic_pinch,
+        "pm": n.palm_mute, "mt": n.mute,
+        "tr": n.tremolo, "ac": n.accent, "tp": n.tap,
+    }
+
+
+def chord_note_to_wire(cn: Note) -> dict:
+    # Chord notes omit their own time (the chord carries it).
+    d = note_to_wire(cn)
+    d.pop("t", None)
+    return d
+
+
+def chord_to_wire(c: Chord) -> dict:
+    return {
+        "t": round(c.time, 3),
+        "id": c.chord_id,
+        "hd": c.high_density,
+        "notes": [chord_note_to_wire(cn) for cn in c.notes],
+    }
+
+
+def note_from_wire(d: dict, time: float | None = None) -> Note:
+    return Note(
+        time=float(d.get("t", time if time is not None else 0.0)),
+        string=int(d.get("s", 0)),
+        fret=int(d.get("f", 0)),
+        sustain=float(d.get("sus", 0.0)),
+        slide_to=int(d.get("sl", -1)),
+        slide_unpitch_to=int(d.get("slu", -1)),
+        bend=float(d.get("bn", 0.0)),
+        hammer_on=bool(d.get("ho", False)),
+        pull_off=bool(d.get("po", False)),
+        harmonic=bool(d.get("hm", False)),
+        harmonic_pinch=bool(d.get("hp", False)),
+        palm_mute=bool(d.get("pm", False)),
+        mute=bool(d.get("mt", False)),
+        tremolo=bool(d.get("tr", False)),
+        accent=bool(d.get("ac", False)),
+        tap=bool(d.get("tp", False)),
+    )
+
+
+def chord_from_wire(d: dict) -> Chord:
+    t = float(d.get("t", 0.0))
+    return Chord(
+        time=t,
+        chord_id=int(d.get("id", 0)),
+        high_density=bool(d.get("hd", False)),
+        notes=[note_from_wire(cn, time=t) for cn in d.get("notes", [])],
+    )
+
+
+def arrangement_to_wire(arr: Arrangement) -> dict:
+    """Serialize an Arrangement into a JSON-ready dict matching the wire format."""
+    return {
+        "name": arr.name,
+        "tuning": list(arr.tuning),
+        "capo": arr.capo,
+        "notes": [note_to_wire(n) for n in arr.notes],
+        "chords": [chord_to_wire(c) for c in arr.chords],
+        "anchors": [{"time": a.time, "fret": a.fret, "width": a.width} for a in arr.anchors],
+        "handshapes": [
+            {"chord_id": h.chord_id, "start_time": h.start_time, "end_time": h.end_time}
+            for h in arr.hand_shapes
+        ],
+        "templates": [
+            {"name": ct.name, "fingers": list(ct.fingers), "frets": list(ct.frets)}
+            for ct in arr.chord_templates
+        ],
+    }
+
+
+def arrangement_from_wire(d: dict) -> Arrangement:
+    """Parse a wire-format arrangement dict back into an Arrangement dataclass."""
+    return Arrangement(
+        name=d.get("name", ""),
+        tuning=list(d.get("tuning", [0] * 6)),
+        capo=int(d.get("capo", 0)),
+        notes=[note_from_wire(n) for n in d.get("notes", [])],
+        chords=[chord_from_wire(c) for c in d.get("chords", [])],
+        anchors=[
+            Anchor(time=float(a.get("time", 0)), fret=int(a.get("fret", 0)),
+                   width=int(a.get("width", 4)))
+            for a in d.get("anchors", [])
+        ],
+        hand_shapes=[
+            HandShape(chord_id=int(h.get("chord_id", 0)),
+                      start_time=float(h.get("start_time", 0)),
+                      end_time=float(h.get("end_time", 0)))
+            for h in d.get("handshapes", [])
+        ],
+        chord_templates=[
+            ChordTemplate(name=ct.get("name", ""),
+                          fingers=list(ct.get("fingers", [-1] * 6)),
+                          frets=list(ct.get("frets", [-1] * 6)))
+            for ct in d.get("templates", [])
+        ],
+    )
 
 
 def _float(elem, attr, default=0.0):

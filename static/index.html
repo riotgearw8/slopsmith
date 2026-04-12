@@ -84,6 +84,13 @@
                         <option value="recent">Recently Added</option>
                         <option value="tuning">Tuning</option>
                     </select>
+                    <!-- Format filter (shared) -->
+                    <select id="lib-format" onchange="sortLibrary()"
+                        class="bg-dark-700 border border-gray-800 rounded-xl px-3 py-2.5 text-sm text-gray-300 outline-none" title="Filter by format">
+                        <option value="">All formats</option>
+                        <option value="psarc">PSARC</option>
+                        <option value="sloppak">Sloppak</option>
+                    </select>
                     <!-- Tree controls -->
                     <button onclick="toggleAllArtists(true)" class="lib-tree-ctrl bg-dark-700 border border-gray-800 rounded-xl px-3 py-2.5 text-sm text-gray-400 hover:text-white transition">Expand All</button>
                     <button onclick="toggleAllArtists(false)" class="lib-tree-ctrl bg-dark-700 border border-gray-800 rounded-xl px-3 py-2.5 text-sm text-gray-400 hover:text-white transition">Collapse All</button>

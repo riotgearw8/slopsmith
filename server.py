@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from psarc import unpack_psarc, read_psarc_entries
 from song import load_song, parse_arrangement
 from audio import find_wem_files, convert_wem
+import sloppak as sloppak_mod
 
 import concurrent.futures
 import sqlite3
@@ -57,9 +58,15 @@ class MetadataDB:
                 duration REAL,
                 tuning TEXT,
                 arrangements TEXT,
-                has_lyrics INTEGER DEFAULT 0
+                has_lyrics INTEGER DEFAULT 0,
+                format TEXT DEFAULT 'psarc'
             )
         """)
+        # Idempotent migration for installs that predate the format column.
+        try:
+            self.conn.execute("ALTER TABLE songs ADD COLUMN format TEXT DEFAULT 'psarc'")
+        except sqlite3.OperationalError:
+            pass
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_songs_artist ON songs(artist COLLATE NOCASE)")
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_songs_title ON songs(title COLLATE NOCASE)")
         self.conn.execute("CREATE TABLE IF NOT EXISTS favorites (filename TEXT PRIMARY KEY)")
@@ -96,7 +103,7 @@ class MetadataDB:
 
     def get(self, filename: str, mtime: float, size: int) -> dict | None:
         row = self.conn.execute(
-            "SELECT mtime, size, title, artist, album, year, duration, tuning, arrangements, has_lyrics "
+            "SELECT mtime, size, title, artist, album, year, duration, tuning, arrangements, has_lyrics, format "
             "FROM songs WHERE filename = ?", (filename,)
         ).fetchone()
         if row and row[0] == mtime and row[1] == size and row[2]:
@@ -105,6 +112,7 @@ class MetadataDB:
                 "year": row[5], "duration": row[6], "tuning": row[7],
                 "arrangements": json.loads(row[8]) if row[8] else [],
                 "has_lyrics": bool(row[9]),
+                "format": row[10] or "psarc",
             }
         return None
 
@@ -112,12 +120,13 @@ class MetadataDB:
         with self._lock:
             self.conn.execute(
                 "INSERT OR REPLACE INTO songs "
-                "(filename, mtime, size, title, artist, album, year, duration, tuning, arrangements, has_lyrics) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "(filename, mtime, size, title, artist, album, year, duration, tuning, arrangements, has_lyrics, format) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (filename, mtime, size, meta.get("title", ""), meta.get("artist", ""),
                  meta.get("album", ""), meta.get("year", ""), meta.get("duration", 0),
                  meta.get("tuning", ""), json.dumps(meta.get("arrangements", [])),
-                 1 if meta.get("has_lyrics") else 0),
+                 1 if meta.get("has_lyrics") else 0,
+                 meta.get("format", "psarc")),
             )
             self.conn.commit()
 
@@ -147,12 +156,16 @@ class MetadataDB:
 
     def query_page(self, q: str = "", page: int = 0, size: int = 24,
                    sort: str = "artist", direction: str = "asc",
-                   favorites_only: bool = False) -> tuple[list[dict], int]:
+                   favorites_only: bool = False,
+                   format_filter: str = "") -> tuple[list[dict], int]:
         """Server-side paginated search. Returns (songs, total_count)."""
         where = "WHERE title != ''"
         params = []
         if favorites_only:
             where += " AND filename IN (SELECT filename FROM favorites)"
+        if format_filter:
+            where += " AND format = ?"
+            params.append(format_filter)
         if q:
             where += " AND (title LIKE ? COLLATE NOCASE OR artist LIKE ? COLLATE NOCASE OR album LIKE ? COLLATE NOCASE)"
             params += [f"%{q}%"] * 3
@@ -168,7 +181,7 @@ class MetadataDB:
 
         total = self.conn.execute(f"SELECT COUNT(*) FROM songs {where}", params).fetchone()[0]
         rows = self.conn.execute(
-            f"SELECT filename, title, artist, album, year, duration, tuning, arrangements, has_lyrics, mtime "
+            f"SELECT filename, title, artist, album, year, duration, tuning, arrangements, has_lyrics, mtime, format "
             f"FROM songs {where} ORDER BY {order} LIMIT ? OFFSET ?",
             params + [size, page * size]
         ).fetchall()
@@ -182,18 +195,23 @@ class MetadataDB:
                 "year": r[4], "duration": r[5], "tuning": r[6],
                 "arrangements": json.loads(r[7]) if r[7] else [],
                 "has_lyrics": bool(r[8]), "mtime": r[9],
+                "format": r[10] or "psarc",
                 "has_estd": r[0] in estd, "favorite": r[0] in favs,
             })
         return songs, total
 
     def query_artists(self, letter: str = "", q: str = "",
                       favorites_only: bool = False,
-                      page: int = 0, size: int = 50) -> tuple[list[dict], int]:
+                      page: int = 0, size: int = 50,
+                      format_filter: str = "") -> tuple[list[dict], int]:
         """Get artists grouped by letter with their albums and songs. Returns (artists, total_artists)."""
         where = "WHERE title != ''"
         params = []
         if favorites_only:
             where += " AND filename IN (SELECT filename FROM favorites)"
+        if format_filter:
+            where += " AND format = ?"
+            params.append(format_filter)
         if letter == "#":
             where += " AND artist NOT GLOB '[A-Za-z]*'"
         elif letter:
@@ -223,7 +241,7 @@ class MetadataDB:
         song_params = params + artist_names
 
         rows = self.conn.execute(
-            f"SELECT filename, title, artist, album, year, duration, tuning, arrangements, has_lyrics "
+            f"SELECT filename, title, artist, album, year, duration, tuning, arrangements, has_lyrics, format "
             f"FROM songs {song_where} ORDER BY artist COLLATE NOCASE, album COLLATE NOCASE, title COLLATE NOCASE",
             song_params
         ).fetchall()
@@ -246,7 +264,9 @@ class MetadataDB:
                 "filename": r[0], "title": r[1], "artist": r[2], "album": r[3],
                 "year": r[4], "duration": r[5], "tuning": r[6],
                 "arrangements": json.loads(r[7]) if r[7] else [],
-                "has_lyrics": bool(r[8]), "has_estd": r[0] in estd,
+                "has_lyrics": bool(r[8]),
+                "format": r[9] or "psarc",
+                "has_estd": r[0] in estd,
                 "favorite": r[0] in favs,
             })
 
@@ -411,8 +431,19 @@ def _extract_meta_fast(psarc_path: Path) -> dict:
     }
 
 
+def _extract_meta_sloppak(path: Path) -> dict:
+    """Extract metadata for a sloppak (file or directory)."""
+    meta = sloppak_mod.extract_meta(path)
+    offsets = meta.pop("tuning_offsets", None) or [0] * 6
+    meta["tuning"] = _tuning_name(offsets)
+    meta["format"] = "sloppak"
+    return meta
+
+
 def _extract_meta_for_file(psarc_path: Path) -> dict:
-    """Extract metadata — try fast in-memory first, fall back to full extraction."""
+    """Extract metadata — dispatches on extension; PSARC path tries fast then falls back."""
+    if sloppak_mod.is_sloppak(psarc_path):
+        return _extract_meta_sloppak(psarc_path)
     try:
         meta = _extract_meta_fast(psarc_path)
         if meta["title"]:
@@ -465,7 +496,11 @@ def _background_scan():
     psarcs = [f for f in sorted(dlc.rglob("*.psarc"))
               if f.is_file()
               and "rs1compatibility" not in f.name.lower()]
-    current_files = {f.name for f in psarcs}
+    # Sloppaks: match both file (zip) and directory form by suffix.
+    sloppaks = [f for f in sorted(dlc.rglob("*.sloppak"))
+                if sloppak_mod.is_sloppak(f)]
+    all_songs = psarcs + sloppaks
+    current_files = {f.name for f in all_songs}
 
     # Clean up stale DB entries
     stale = meta_db.delete_missing(current_files)
@@ -474,7 +509,7 @@ def _background_scan():
 
     # Figure out which need scanning
     to_scan = []
-    for f in psarcs:
+    for f in all_songs:
         stat = f.stat()
         if not meta_db.get(f.name, stat.st_mtime, stat.st_size):
             to_scan.append((f, stat))
@@ -484,7 +519,7 @@ def _background_scan():
         return
 
     _scan_status = {"running": True, "total": len(to_scan), "done": 0, "current": ""}
-    print(f"Library: {len(psarcs)} PSARCs, {len(psarcs) - len(to_scan)} cached, {len(to_scan)} to scan")
+    print(f"Library: {len(psarcs)} PSARCs + {len(sloppaks)} sloppaks, {len(all_songs) - len(to_scan)} cached, {len(to_scan)} to scan")
 
     def _scan_one(item):
         f, stat = item
@@ -570,19 +605,23 @@ def trigger_full_rescan():
 
 @app.get("/api/library")
 def list_library(q: str = "", page: int = 0, size: int = 24, sort: str = "artist",
-                 dir: str = "asc", favorites: int = 0):
+                 dir: str = "asc", favorites: int = 0, format: str = ""):
     """Paginated library search, queried from SQLite."""
     size = min(size, 100)
+    fmt = format if format in ("psarc", "sloppak") else ""
     songs, total = meta_db.query_page(q=q, page=page, size=size, sort=sort,
-                                       direction=dir, favorites_only=bool(favorites))
+                                       direction=dir, favorites_only=bool(favorites),
+                                       format_filter=fmt)
     return {"songs": songs, "total": total, "page": page, "size": size}
 
 
 @app.get("/api/library/artists")
-def list_artists(letter: str = "", q: str = "", favorites: int = 0, page: int = 0, size: int = 50):
+def list_artists(letter: str = "", q: str = "", favorites: int = 0, page: int = 0, size: int = 50,
+                 format: str = ""):
     """Get artists grouped by letter with albums and songs (for tree view)."""
+    fmt = format if format in ("psarc", "sloppak") else ""
     artists, total = meta_db.query_artists(letter=letter, q=q, favorites_only=bool(favorites),
-                                           page=page, size=min(size, 100))
+                                           page=page, size=min(size, 100), format_filter=fmt)
     return {"artists": artists, "total_artists": total, "page": page, "size": size}
 
 
@@ -960,6 +999,41 @@ def _get_or_extract(filename, psarc_path):
     return tmp, song, True  # True = freshly extracted
 
 
+SLOPPAK_CACHE_DIR = STATIC_DIR / "sloppak_cache"
+
+
+@app.get("/api/sloppak/{filename:path}/file/{rel_path:path}")
+def serve_sloppak_file(filename: str, rel_path: str):
+    """Serve a file from inside a sloppak (stems, cover, etc.)."""
+    src = sloppak_mod.get_cached_source_dir(filename)
+    if src is None:
+        dlc = _get_dlc_dir()
+        if not dlc:
+            return JSONResponse({"error": "not configured"}, 404)
+        try:
+            src = sloppak_mod.resolve_source_dir(filename, dlc, SLOPPAK_CACHE_DIR)
+        except Exception:
+            return JSONResponse({"error": "not found"}, 404)
+    # Prevent path traversal.
+    target = (src / rel_path).resolve()
+    try:
+        target.relative_to(src.resolve())
+    except ValueError:
+        return JSONResponse({"error": "forbidden"}, 403)
+    if not target.exists() or not target.is_file():
+        return JSONResponse({"error": "not found"}, 404)
+    ext = target.suffix.lower()
+    mt = {
+        ".ogg": "audio/ogg", ".opus": "audio/ogg", ".oga": "audio/ogg",
+        ".mp3": "audio/mpeg", ".wav": "audio/wav", ".flac": "audio/flac",
+        ".m4a": "audio/mp4",
+        ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+        ".png": "image/png", ".webp": "image/webp",
+        ".json": "application/json",
+    }.get(ext)
+    return FileResponse(str(target), media_type=mt) if mt else FileResponse(str(target))
+
+
 @app.websocket("/ws/highway/{filename:path}")
 async def highway_ws(websocket: WebSocket, filename: str, arrangement: int = -1):
     """Stream song data for the highway renderer over WebSocket."""
@@ -977,8 +1051,10 @@ async def highway_ws(websocket: WebSocket, filename: str, arrangement: int = -1)
         await websocket.close()
         return
 
+    is_slop = sloppak_mod.is_sloppak(psarc_path)
     tmp = None
     owns_tmp = False
+    loaded_slop = None  # LoadedSloppak when is_slop
     _keepalive_active = True
 
     async def _send_keepalives():
@@ -996,7 +1072,17 @@ async def highway_ws(websocket: WebSocket, filename: str, arrangement: int = -1)
 
         try:
             loop = asyncio.get_event_loop()
-            tmp, song, owns_tmp = await loop.run_in_executor(None, lambda: _get_or_extract(filename, psarc_path))
+            if is_slop:
+                SLOPPAK_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+                loaded_slop = await loop.run_in_executor(
+                    None,
+                    lambda: sloppak_mod.load_song(filename, dlc, SLOPPAK_CACHE_DIR),
+                )
+                song = loaded_slop.song
+                tmp = str(loaded_slop.source_dir)
+                owns_tmp = False
+            else:
+                tmp, song, owns_tmp = await loop.run_in_executor(None, lambda: _get_or_extract(filename, psarc_path))
         finally:
             _keepalive_active = False
             keepalive_task.cancel()
@@ -1037,19 +1123,33 @@ async def highway_ws(websocket: WebSocket, filename: str, arrangement: int = -1)
 
         # Convert audio with unique filename (check cache first)
         audio_url = None
+        stems_payload: list[dict] = []
         audio_id = Path(filename).stem.replace(" ", "_")
-        AUDIO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        # Check if audio already cached
-        for ext in [".mp3", ".ogg", ".wav"]:
-            for cache_dir in [AUDIO_CACHE_DIR, STATIC_DIR]:
-                cached_audio = cache_dir / f"audio_{audio_id}{ext}"
-                if cached_audio.exists() and cached_audio.stat().st_size > 1000:
-                    audio_url = f"/audio/audio_{audio_id}{ext}"
-                    break
-            if audio_url:
-                break
 
-        if not audio_url:
+        if is_slop:
+            # Stems are served via the sloppak file endpoint; the first stem
+            # (or explicit default) is the core <audio> source. The stems
+            # plugin replaces it with a mixed graph when active.
+            from urllib.parse import quote
+            q_fn = quote(filename, safe="")
+            for s in loaded_slop.stems:
+                url = f"/api/sloppak/{q_fn}/file/{quote(s['file'])}"
+                stems_payload.append({"id": s["id"], "url": url, "default": s["default"]})
+            if stems_payload:
+                audio_url = stems_payload[0]["url"]
+        else:
+            AUDIO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            # Check if audio already cached (writable cache dir or legacy static dir)
+            for ext in [".mp3", ".ogg", ".wav"]:
+                for cache_dir in [AUDIO_CACHE_DIR, STATIC_DIR]:
+                    cached_audio = cache_dir / f"audio_{audio_id}{ext}"
+                    if cached_audio.exists() and cached_audio.stat().st_size > 1000:
+                        audio_url = f"/audio/audio_{audio_id}{ext}"
+                        break
+                if audio_url:
+                    break
+
+        if not audio_url and not is_slop:
             await websocket.send_json({"type": "loading", "stage": "Converting audio..."})
             wem_files = find_wem_files(tmp)
             if wem_files:
@@ -1089,6 +1189,8 @@ async def highway_ws(websocket: WebSocket, filename: str, arrangement: int = -1)
             "audio_url": audio_url,
             "tuning": arr.tuning,
             "capo": arr.capo,
+            "format": "sloppak" if is_slop else "psarc",
+            "stems": stems_payload,
         })
 
         # Send beats
@@ -1112,25 +1214,32 @@ async def highway_ws(websocket: WebSocket, filename: str, arrangement: int = -1)
         # Send lyrics if available
         import xml.etree.ElementTree as ET
         lyrics = []
-        for xml_path in sorted(Path(tmp).rglob("*.xml")):
-            try:
-                root = ET.parse(xml_path).getroot()
-                if root.tag == "vocals":
-                    for v in root.findall("vocal"):
-                        lyrics.append({
-                            "t": round(float(v.get("time", "0")), 3),
-                            "d": round(float(v.get("length", "0")), 3),
-                            "w": v.get("lyric", ""),
-                        })
-                    break
-            except Exception:
-                pass
+        if is_slop:
+            lyrics = list(song.lyrics or [])
+        else:
+            for xml_path in sorted(Path(tmp).rglob("*.xml")):
+                try:
+                    root = ET.parse(xml_path).getroot()
+                    if root.tag == "vocals":
+                        for v in root.findall("vocal"):
+                            lyrics.append({
+                                "t": round(float(v.get("time", "0")), 3),
+                                "d": round(float(v.get("length", "0")), 3),
+                                "w": v.get("lyric", ""),
+                            })
+                        break
+                except Exception:
+                    pass
         if lyrics:
             await websocket.send_json({"type": "lyrics", "data": lyrics})
 
-        # Send tone changes
+        # Send tone changes (PSARC only; sloppak has no tone XML)
         tone_changes = []
-        for xml_path in sorted(Path(tmp).rglob("*.xml")):
+        if is_slop:
+            xml_paths = []
+        else:
+            xml_paths = sorted(Path(tmp).rglob("*.xml"))
+        for xml_path in xml_paths:
             try:
                 root = ET.parse(xml_path).getroot()
                 if root.tag != "song":

@@ -39,6 +39,7 @@ html { scroll-behavior: smooth; }
     align-items: center;
     justify-content: center;
     overflow: hidden;
+    position: relative;
 }
 .song-card .card-art img {
     width: 100%;
