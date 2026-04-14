@@ -1049,6 +1049,9 @@ function createHighway() {
             }
         },
 
+        getLyricsVisible() { return showLyrics; },
+        setLyricsVisible(v) { showLyrics = !!v; },
+
         reconnect(filename, arrangement) {
             // Close old WS but keep audio + animation running
             if (ws) { ws.close(); ws = null; }
