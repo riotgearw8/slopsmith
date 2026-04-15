@@ -341,10 +341,11 @@ def _tuning_name(offsets: list[int]) -> str:
             return name
 
     # Drop tunings (low string 2 semitones below the rest)
+    # Named after the low string's note: e.g. offsets[-2,0,0,0,0,0] = Drop D (low E dropped to D)
     if len(offsets) >= 6 and offsets[0] == offsets[1] - 2 and all(o == offsets[1] for o in offsets[1:]):
-        base = standard.get(offsets[1], "").replace(" Standard", "")
-        if base:
-            return f"Drop {base}"
+        note_names = ["E", "F", "F#", "G", "Ab", "A", "Bb", "B", "C", "C#", "D", "Eb"]
+        low_note = note_names[offsets[0] % 12]
+        return f"Drop {low_note}"
 
     # Common named tunings
     named = {
