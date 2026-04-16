@@ -88,6 +88,7 @@ def _wem_to_ogg(wem_path: str, out_ogg: Path) -> None:
 
 
 def _parse_lyrics(extracted_dir: Path) -> list[dict]:
+    # Try vocals XML first (CDLC and some official DLC)
     for xml_path in sorted(extracted_dir.rglob("*.xml")):
         try:
             root = ET.parse(xml_path).getroot()
@@ -103,6 +104,16 @@ def _parse_lyrics(extracted_dir: Path) -> list[dict]:
             }
             for v in root.findall("vocal")
         ]
+    # Fall back to vocals SNG (official DLC ships SNG-only)
+    try:
+        from sng_vocals import parse_vocals_sng
+        for sng_path in sorted(extracted_dir.rglob("*vocals*.sng")):
+            plat = "mac" if "/macos/" in str(sng_path).replace("\\", "/").lower() else "pc"
+            lyrics = parse_vocals_sng(str(sng_path), plat)
+            if lyrics:
+                return lyrics
+    except ImportError:
+        pass
     return []
 
 
