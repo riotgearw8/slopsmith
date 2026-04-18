@@ -19,7 +19,7 @@ function createHighway() {
     let toneChanges = [];
     let toneBase = "";
     let ready = false;
-    let showLyrics = true;
+    let showLyrics = localStorage.getItem('showLyrics') !== 'false';
     let _drawHooks = [];  // plugin draw callbacks: fn(ctx, W, H)
     let _renderScale = parseFloat(localStorage.getItem('renderScale') || '1');  // 1 = full, 0.5 = half res
     let _inverted = localStorage.getItem('invertHighway') === 'true';
@@ -1040,6 +1040,7 @@ function createHighway() {
 
         toggleLyrics() {
             showLyrics = !showLyrics;
+            localStorage.setItem('showLyrics', String(showLyrics));
             const btn = document.getElementById('btn-lyrics');
             if (btn) {
                 btn.textContent = showLyrics ? 'Lyrics ✓' : 'Lyrics ✗';
