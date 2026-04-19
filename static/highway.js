@@ -9,6 +9,7 @@ function createHighway() {
     let _connectOpts = {};
     let _resizeContainer = null;
     let _resizeHandler = null;
+    let _onLyricsChange = null;
 
     // Song data (populated via WebSocket)
     let songInfo = {};
@@ -1067,6 +1068,7 @@ function createHighway() {
         getSections() { return sections; },
         getSongInfo() { return songInfo; },
         addDrawHook(fn) { _drawHooks.push(fn); },
+        removeDrawHook(fn) { _drawHooks = _drawHooks.filter(h => h !== fn); },
         project(tOffset) { return project(tOffset); },
         fretX(fret, scale, w) { return fretX(fret, scale, w); },
 
@@ -1076,17 +1078,15 @@ function createHighway() {
         toggleLyrics() {
             showLyrics = !showLyrics;
             localStorage.setItem('showLyrics', String(showLyrics));
-            const btn = document.getElementById('btn-lyrics');
-            if (btn) {
-                btn.textContent = showLyrics ? 'Lyrics ✓' : 'Lyrics ✗';
-                btn.className = showLyrics
-                    ? 'px-3 py-1.5 bg-purple-900/40 hover:bg-purple-900/60 rounded-lg text-xs text-purple-300 transition'
-                    : 'px-3 py-1.5 bg-dark-600 hover:bg-dark-500 rounded-lg text-xs text-gray-500 transition';
-            }
+            if (_onLyricsChange) _onLyricsChange(showLyrics);
         },
 
         getLyricsVisible() { return showLyrics; },
-        setLyricsVisible(v) { showLyrics = !!v; },
+        setLyricsVisible(v) {
+            showLyrics = !!v;
+            if (_onLyricsChange) _onLyricsChange(showLyrics);
+        },
+        setOnLyricsChange(fn) { _onLyricsChange = fn; },
 
         reconnect(filename, arrangement) {
             // Close old WS but keep audio + animation running
@@ -1115,3 +1115,12 @@ function createHighway() {
 }
 const highway = createHighway();
 window.highway = highway; // expose for plugins
+highway.setOnLyricsChange(function(visible) {
+    const btn = document.getElementById('btn-lyrics');
+    if (btn) {
+        btn.textContent = visible ? 'Lyrics \u2713' : 'Lyrics \u2717';
+        btn.className = visible
+            ? 'px-3 py-1.5 bg-purple-900/40 hover:bg-purple-900/60 rounded-lg text-xs text-purple-300 transition'
+            : 'px-3 py-1.5 bg-dark-600 hover:bg-dark-500 rounded-lg text-xs text-gray-500 transition';
+    }
+});
