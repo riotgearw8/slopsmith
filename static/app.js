@@ -705,6 +705,28 @@ window.slopsmith = Object.assign(new EventTarget(), {
     off(event, fn) { this.removeEventListener(event, fn); }
 });
 
+// Initialise volume from persisted preference (matches lefty / invertHighway /
+// renderScale / showLyrics convention). Falls back to the slider's default.
+(function _initVolume() {
+    const slider = document.getElementById('volume');
+    const label = document.getElementById('vol-label');
+    const stored = parseFloat(localStorage.getItem('volume'));
+    const v = Number.isFinite(stored) ? stored : parseFloat(slider.value);
+    slider.value = v;
+    label.textContent = v + '%';
+    audio.volume = v / 100;
+})();
+
+// Re-sync audio volume from the slider every time a new source finishes
+// loading metadata. Belt + suspenders — some combinations of plugin audio-
+// graph routing and media-element swaps reset audio.volume to 1.0, which
+// would leave the slider showing one value while audio plays at another
+// (see slopsmith#54).
+audio.addEventListener('loadedmetadata', () => {
+    const slider = document.getElementById('volume');
+    if (slider) audio.volume = parseFloat(slider.value) / 100;
+});
+
 // Debug audio issues
 audio.addEventListener('pause', () => { if (isPlaying) console.log('Audio paused unexpectedly at', audio.currentTime.toFixed(1)); });
 audio.addEventListener('error', (e) => {
@@ -809,7 +831,11 @@ function togglePlay() {
 }
 
 function seekBy(s) { audio.currentTime = Math.max(0, audio.currentTime + s); }
-function setVolume(v) { audio.volume = v / 100; document.getElementById('vol-label').textContent = v + '%'; }
+function setVolume(v) {
+    audio.volume = v / 100;
+    document.getElementById('vol-label').textContent = v + '%';
+    localStorage.setItem('volume', String(v));
+}
 function setSpeed(v) {
     audio.playbackRate = parseFloat(v);
     document.getElementById('speed-label').textContent = parseFloat(v).toFixed(2) + 'x';
