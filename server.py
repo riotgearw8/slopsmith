@@ -819,6 +819,23 @@ def save_settings(data: dict):
             # which Python raises distinctly from ValueError.
             return {"error": "master_difficulty must be a number between 0 and 100"}
 
+    if "av_offset_ms" in data:
+        # Audio-output pipeline latency compensation. Positive values
+        # mean audio is running ahead of visuals; the highway adds
+        # this to its render clock to catch the visuals up. Clamped
+        # to ±1000 ms to mirror the client-side slider — a direct
+        # POST shouldn't be able to persist `1e9`. Same defensive
+        # coercion shape as master_difficulty above (reject bool,
+        # cover OverflowError, structured 4xx-style return on bad
+        # input rather than 500).
+        raw = data["av_offset_ms"]
+        if isinstance(raw, bool):
+            return {"error": "av_offset_ms must be a number between -1000 and 1000"}
+        try:
+            cfg["av_offset_ms"] = max(-1000.0, min(1000.0, float(raw)))
+        except (TypeError, ValueError, OverflowError):
+            return {"error": "av_offset_ms must be a number between -1000 and 1000"}
+
     config_file.write_text(json.dumps(cfg, indent=2))
     return {"message": ". ".join(messages) if messages else "Settings saved"}
 

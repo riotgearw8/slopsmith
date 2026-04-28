@@ -4,7 +4,17 @@
  */
 function createHighway() {
     let canvas, ctx, ws;
+    // Two notions of "now" — kept deliberately separate:
+    //   chartTime — audio-aligned clock. What getTime() exposes to plugins
+    //               (scoring, note detection, etc.) and what setTime() receives.
+    //   currentTime — rendering clock. Equal to chartTime + avOffsetSec, so the
+    //                 draw code can shift visual notes forward to compensate
+    //                 for audio-output pipeline latency without plugins having
+    //                 to care about the offset.
+    // avOffsetSec is set by setAvOffset(ms); default 0 means old behavior.
+    let chartTime = 0;
     let currentTime = 0;
+    let avOffsetSec = 0;
     let animFrame = null;
     let _connectOpts = {};
     let _resizeContainer = null;
@@ -1993,7 +2003,9 @@ function createHighway() {
             };
         },
 
-        setTime(t) { currentTime = t; },
+        setTime(t) { chartTime = t; currentTime = t + avOffsetSec; },
+        setAvOffset(ms) { avOffsetSec = (Number(ms) || 0) / 1000; currentTime = chartTime + avOffsetSec; },
+        getAvOffset() { return avOffsetSec * 1000; },
 
         getBPM(t) {
             // Calculate BPM from beat intervals near time t
@@ -2014,7 +2026,7 @@ function createHighway() {
         },
 
         getBeats() { return beats; },
-        getTime() { return currentTime; },
+        getTime() { return chartTime; },
         getNotes() { return notes; },
         getChords() { return chords; },
         // Live reference to the chord-template lookup table —

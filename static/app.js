@@ -495,10 +495,67 @@ async function loadSettings() {
     if (masterySlider) masterySlider.value = masteryPct;
     if (masteryLabel) masteryLabel.textContent = masteryPct + '%';
     highway.setMastery(masteryPct / 100);
+    // Route the loaded value through setAvOffsetMs so the highway's
+    // render clock, the Settings slider, the HUD readout, and the
+    // module variable all pick it up consistently. Pass skipPersist
+    // so we don't echo the loaded value back to the server.
+    setAvOffsetMs(Number(data.av_offset_ms) || 0, /* skipPersist */ true);
     // Native folder picker — only present when running inside slopsmith-desktop.
     if (window.slopsmithDesktop && typeof window.slopsmithDesktop.pickDirectory === 'function') {
         document.getElementById('btn-pick-dlc')?.classList.remove('hidden');
     }
+}
+
+// A/V sync calibration. Positive = audio runs ahead of visuals; we
+// add this to audio.currentTime when driving the highway so the
+// visuals catch up. Persisted via /api/settings as av_offset_ms.
+// Live-tunable from the player screen via [ / ] keys (Shift for
+// ±50 ms) and from the Settings slider; both auto-save with the
+// same debounced POST. loadSettings() seeds the value via
+// setAvOffsetMs without saving (skipPersist=true) to avoid an
+// echo-back round-trip.
+let _avOffsetMs = 0;
+let _avSaveDebounce = null;
+function setAvOffsetMs(ms, skipPersist) {
+    _avOffsetMs = Number(ms) || 0;
+    // Drive the highway's render-time shift. getTime() still returns
+    // the audio-aligned chart time so plugins (note detection, etc.)
+    // keep scoring against the real chart clock regardless of visual
+    // calibration.
+    if (typeof highway !== 'undefined' && highway?.setAvOffset) highway.setAvOffset(_avOffsetMs);
+    // Sync any visible Settings slider
+    const avSlider = document.getElementById('setting-av-offset');
+    if (avSlider) avSlider.value = _avOffsetMs;
+    const avVal = document.getElementById('setting-av-offset-val');
+    if (avVal) avVal.textContent = Math.round(_avOffsetMs);
+    // Update the player HUD readout (hidden when offset = 0 to
+    // avoid clutter; the keyboard shortcut is documented in the
+    // Settings help text so it stays discoverable).
+    const hud = document.getElementById('hud-avoffset');
+    if (hud) {
+        hud.textContent = `A/V ${_avOffsetMs >= 0 ? '+' : ''}${Math.round(_avOffsetMs)} ms`;
+        hud.classList.toggle('hidden', _avOffsetMs === 0);
+    }
+    if (!skipPersist) _persistAvOffset();
+}
+function _persistAvOffset() {
+    // Debounced persist — POST only the one field; the server merges.
+    if (_avSaveDebounce) clearTimeout(_avSaveDebounce);
+    _avSaveDebounce = setTimeout(async () => {
+        _avSaveDebounce = null;
+        try {
+            await fetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ av_offset_ms: _avOffsetMs }),
+            });
+        } catch (e) {
+            console.warn('A/V offset save failed:', e);
+        }
+    }, 400);
+}
+function nudgeAvOffsetMs(delta) {
+    setAvOffsetMs(Math.max(-1000, Math.min(1000, _avOffsetMs + delta)));
 }
 
 // Open a native OS folder picker via the Electron bridge (desktop only) and
@@ -517,6 +574,7 @@ async function saveSettings() {
             dlc_dir: document.getElementById('dlc-path').value.trim(),
             default_arrangement: document.getElementById('default-arrangement').value,
             demucs_server_url: document.getElementById('demucs-server-url').value.trim(),
+            av_offset_ms: _avOffsetMs,
         }),
     });
     const data = await resp.json();
@@ -1377,6 +1435,13 @@ document.addEventListener('keydown', e => {
     else if (e.code === 'ArrowLeft') seekBy(-5);
     else if (e.code === 'ArrowRight') seekBy(5);
     else if (e.code === 'Escape') showScreen('home');
+    // A/V offset live-calibration — watch the highway and listen to
+    // the audio while tuning. Shift for coarse ±50 ms, bare key for
+    // fine ±10 ms. Match on e.key (the produced character) rather
+    // than e.code (physical-key position) so layouts where `[`/`]`
+    // are AltGr combinations (QWERTZ, AZERTY) still fire correctly.
+    else if (e.key === '[') { e.preventDefault(); nudgeAvOffsetMs(e.shiftKey ? -50 : -10); }
+    else if (e.key === ']') { e.preventDefault(); nudgeAvOffsetMs(e.shiftKey ?  50 :  10); }
 });
 
 // ── Edit metadata modal ─────────────────────────────────────────────────
@@ -1700,9 +1765,13 @@ async function loadPlugins() {
     return plugins;
 }
 
-// Load library on start
-loadPlugins().then((plugins) => {
+// Load library on start. loadSettings is awaited alongside so persisted
+// values (A/V offset, mastery, etc.) are applied to the highway + HUD
+// before any playSong runs — otherwise a fast click could start
+// playback with stale settings before /api/settings returned.
+loadPlugins().then(async (plugins) => {
     setLibView('grid');
+    try { await loadSettings(); } catch (e) { console.warn('initial loadSettings failed:', e); }
     checkScanAndLoad();
     // Viz picker depends on plugin scripts having loaded (to find
     // window.slopsmithViz_<id> factories), so run it after loadPlugins.
