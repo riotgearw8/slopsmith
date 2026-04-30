@@ -31,7 +31,13 @@ try:
 except OSError:
     pass  # Read-only in packaged installs
 
-DLC_DIR = Path(os.environ.get("DLC_DIR", ""))
+# Distinguish "env not set / empty" from "explicitly set". Path("") collapses
+# to Path(".") so we can't recover that signal after the cast — capture the
+# raw env-var string up front and let _get_dlc_dir() consult both. This way
+# `DLC_DIR=.` remains a valid opt-in for cwd while `DLC_DIR=""` (or unset)
+# falls through to the config.json fallback.
+_DLC_DIR_ENV = os.environ.get("DLC_DIR", "").strip()
+DLC_DIR = Path(_DLC_DIR_ENV) if _DLC_DIR_ENV else Path("")
 CONFIG_DIR = Path(os.environ.get("CONFIG_DIR", str(Path.home() / ".local" / "share" / "rocksmith-cdlc")))
 
 # Writable cache directories (use CONFIG_DIR, not STATIC_DIR which may be read-only)
@@ -313,15 +319,21 @@ meta_db = MetadataDB()
 
 
 def _get_dlc_dir() -> Path | None:
-    if DLC_DIR.is_dir():
+    # Only consider DLC_DIR if the env var was non-empty. `Path("")` collapses
+    # to `.` and reports `.is_dir() == True`, which would silently shadow the
+    # config.json fallback. Checking the raw env string preserves
+    # `DLC_DIR=.` as a valid opt-in for cwd while keeping unset/empty out.
+    if _DLC_DIR_ENV and DLC_DIR.is_dir():
         return DLC_DIR
     config_file = CONFIG_DIR / "config.json"
     if config_file.exists():
         try:
             cfg = json.loads(config_file.read_text())
-            p = Path(cfg.get("dlc_dir", ""))
-            if p.is_dir():
-                return p
+            raw = str(cfg.get("dlc_dir", "")).strip()
+            if raw:
+                p = Path(raw)
+                if p.is_dir():
+                    return p
         except Exception:
             pass
     return None
@@ -726,7 +738,12 @@ def _default_settings():
     unreadable. Also used to seed a fresh cfg on first-run POSTs so a
     single-key write (e.g. the difficulty slider) can't silently wipe
     defaults that subsequent GETs would have exposed."""
-    return {"dlc_dir": str(DLC_DIR) if DLC_DIR.is_dir() else ""}
+    # Same `_DLC_DIR_ENV` truthy check as `_get_dlc_dir`: an empty env
+    # var collapses to `Path(".")` whose `.is_dir()` is True, so without
+    # the explicit guard we'd surface `"."` to /api/settings — and any
+    # partial-update POST would then persist that into config.json,
+    # silently undoing the env-var fix on the next load.
+    return {"dlc_dir": str(DLC_DIR) if (_DLC_DIR_ENV and DLC_DIR.is_dir()) else ""}
 
 
 def _load_config(config_file):
