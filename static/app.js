@@ -2486,7 +2486,6 @@ async function bootstrapPluginsAndUi() {
         }
     }
     const plugins = await loadPlugins();
-    setPluginLoadingState(false, '');
     return plugins;
 }
 
