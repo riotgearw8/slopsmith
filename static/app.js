@@ -2224,6 +2224,62 @@ async function checkScanAndLoad() {
 }
 
 // ── Plugin loader ───────────────────────────────────────────────────────
+function setPluginLoadingState(loading, message) {
+    const navContainer = document.getElementById('nav-plugins');
+    const mobileNavContainer = document.getElementById('mobile-nav-plugins');
+    const settingsArea = document.getElementById('plugin-settings-area');
+    if (!navContainer || !mobileNavContainer) return;
+
+    if (loading) {
+        navContainer.innerHTML = `<span class="text-xs text-gray-500 animate-pulse">${esc(message || 'Loading plugins...')}</span>`;
+        mobileNavContainer.innerHTML = `
+            <span class="text-xs text-gray-600 uppercase tracking-wider">Plugins</span>
+            <span class="text-xs text-gray-500 animate-pulse">${esc(message || 'Loading plugins...')}</span>`;
+        if (settingsArea) settingsArea.classList.add('hidden');
+        return;
+    }
+
+    navContainer.innerHTML = '';
+    mobileNavContainer.innerHTML = '<span class="text-xs text-gray-600 uppercase tracking-wider">Plugins</span>';
+}
+
+async function waitForPluginStartupComplete(timeoutMs = 180000) {
+    const start = Date.now();
+    let last = null;
+    let failCount = 0;
+    const MAX_CONSECUTIVE_FAILURES = 5;
+    while (Date.now() - start < timeoutMs) {
+        try {
+            const resp = await fetch('/api/startup-status');
+            if (resp.ok) {
+                failCount = 0;
+                const status = await resp.json();
+                last = status;
+                const phase = (status.phase || '').trim();
+                const msg = (status.message || '').trim() || 'Loading plugins...';
+                const countMsg = status.total > 0 ? ` (${status.loaded || 0}/${status.total})` : '';
+                setPluginLoadingState(Boolean(status.running), `${msg}${countMsg}`);
+                if (!status.running && (phase === 'complete' || phase === 'error')) return status;
+            } else {
+                failCount++;
+                if (failCount >= MAX_CONSECUTIVE_FAILURES) {
+                    setPluginLoadingState(false);
+                    return last || { running: false, phase: 'error', message: 'Startup status unavailable', error: null, current_plugin: '', loaded: 0, total: 0 };
+                }
+            }
+        } catch (e) {
+            failCount++;
+            if (failCount >= MAX_CONSECUTIVE_FAILURES) {
+                setPluginLoadingState(false);
+                return last || { running: false, phase: 'error', message: 'Startup status unavailable', error: null, current_plugin: '', loaded: 0, total: 0 };
+            }
+        }
+        await new Promise((r) => setTimeout(r, 800));
+    }
+    setPluginLoadingState(false);
+    return { running: false, phase: 'timeout', message: 'Plugin startup timed out', error: null, current_plugin: '', loaded: 0, total: 0 };
+}
+
 async function loadPlugins() {
     let plugins;
     try {
@@ -2233,6 +2289,12 @@ async function loadPlugins() {
         const navContainer = document.getElementById('nav-plugins');
         const mobileNavContainer = document.getElementById('mobile-nav-plugins');
         const settingsContainer = document.getElementById('plugin-settings');
+
+        // One-shot hydration guard: always clear plugin-owned containers first.
+        navContainer.innerHTML = '';
+        mobileNavContainer.innerHTML = '<span class="text-xs text-gray-600 uppercase tracking-wider">Plugins</span>';
+        if (settingsContainer) settingsContainer.innerHTML = '';
+        document.querySelectorAll('.screen[id^="plugin-"]').forEach((el) => el.remove());
 
         // Plugin settings area hosts both "Plugin Updates" and per-plugin
         // collapsibles. Reveal it whenever any plugins are installed —
@@ -2380,11 +2442,56 @@ async function loadPlugins() {
     return plugins;
 }
 
+async function _scheduleStartupRehydration() {
+    // Continue polling until the backend startup completes (or a long deadline).
+    // Used when the initial waitForPluginStartupComplete() window expired before
+    // LOADED_PLUGINS was populated — re-hydrates plugins + viz picker once done.
+    const REHYDRATE_TIMEOUT_MS = 10 * 60 * 1000; // 10 min additional window
+    const start = Date.now();
+    while (Date.now() - start < REHYDRATE_TIMEOUT_MS) {
+        await new Promise((r) => setTimeout(r, 5000));
+        try {
+            const resp = await fetch('/api/startup-status');
+            if (!resp.ok) continue;
+            const status = await resp.json();
+            if (!status.running) {
+                if (status.phase === 'complete') {
+                    console.log('[slopsmith] Background startup complete — re-hydrating plugins');
+                    const plugins = await loadPlugins();
+                    _populateVizPicker(plugins);
+                    setPluginLoadingState(false, '');
+                } else {
+                    console.warn('[slopsmith] Backend startup ended without completing — skipping re-hydration');
+                }
+                return;
+            }
+        } catch (_e) { /* network error — keep trying */ }
+    }
+}
+
+async function bootstrapPluginsAndUi() {
+    setPluginLoadingState(true, 'Loading plugins...');
+    const startup = await waitForPluginStartupComplete();
+    if (startup && (startup.phase === 'error' || startup.phase === 'timeout')) {
+        const msg = startup.error || startup.message || 'Plugin startup failed';
+        setPluginLoadingState(false, '');
+        console.warn('Plugin startup reported error:', msg);
+        // On timeout the backend may still be loading. Continue polling in the
+        // background so plugins are hydrated once startup eventually completes.
+        if (startup.phase === 'timeout') {
+            _scheduleStartupRehydration();
+        }
+    }
+    const plugins = await loadPlugins();
+    setPluginLoadingState(false, '');
+    return plugins;
+}
+
 // Load library on start. loadSettings is awaited alongside so persisted
 // values (A/V offset, mastery, etc.) are applied to the highway + HUD
 // before any playSong runs — otherwise a fast click could start
 // playback with stale settings before /api/settings returned.
-loadPlugins().then(async (plugins) => {
+(async () => {
     // Restore library-filter UI state from localStorage before the first
     // grid fetch so the badge/chips are accurate immediately
     // (slopsmith#129).
@@ -2408,6 +2515,8 @@ loadPlugins().then(async (plugins) => {
     setLibView(libView);
     try { await loadSettings(); } catch (e) { console.warn('initial loadSettings failed:', e); }
     checkScanAndLoad();
+
+    const plugins = await bootstrapPluginsAndUi();
     // Viz picker depends on plugin scripts having loaded (to find
     // window.slopsmithViz_<id> factories), so run it after loadPlugins.
     // Reuse the plugin list loadPlugins just fetched — no need to
@@ -2421,4 +2530,4 @@ loadPlugins().then(async (plugins) => {
             if (el && v && v.toLowerCase() !== 'unknown') el.textContent = 'v' + v;
         })
         .catch(() => {});
-});
+})();

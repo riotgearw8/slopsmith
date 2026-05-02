@@ -809,3 +809,73 @@ def test_per_plugin_context_does_not_leak_load_sibling_across_plugins(tmp_path, 
     _run_load_plugins(plugins, fake_app, tmp_path)
     assert fake_app.state.aaa_origin == "aaa"
     assert fake_app.state.zzz_origin == "zzz"
+
+
+# ── progress_cb tests ─────────────────────────────────────────────────────────
+
+def _run_load_plugins_with_cb(plugins, app, tmp_path, progress_cb, context=None):
+    """Like _run_load_plugins but passes a progress_cb spy."""
+    saved_dir = plugins.PLUGINS_DIR
+    plugins.PLUGINS_DIR = tmp_path
+    try:
+        plugins.load_plugins(app, context if context is not None else {}, progress_cb=progress_cb)
+    finally:
+        plugins.PLUGINS_DIR = saved_dir
+
+
+def test_progress_cb_receives_phases_and_counts(tmp_path, reset_plugin_state):
+    """progress_cb spy should receive structured events including
+    plugins-discovered, plugins-complete, loaded/total counters, and
+    the complete event should have loaded == total == number of plugins."""
+    plugins = reset_plugin_state
+    _make_plugin(tmp_path, "alpha")
+    _make_plugin(tmp_path, "beta")
+
+    events = []
+    _run_load_plugins_with_cb(plugins, type("FakeApp", (), {})(), tmp_path, events.append)
+
+    phases = [e["phase"] for e in events]
+    assert "plugins-discovered" in phases
+    assert "plugins-complete" in phases
+    # All events carry int counters.
+    for e in events:
+        assert isinstance(e["loaded"], int), f"loaded not int in {e}"
+        assert isinstance(e["total"], int), f"total not int in {e}"
+    # The complete event has loaded == total == 2.
+    complete = next(e for e in events if e["phase"] == "plugins-complete")
+    assert complete["loaded"] == 2
+    assert complete["total"] == 2
+
+
+def test_progress_cb_errors_do_not_break_plugin_startup(tmp_path, reset_plugin_state):
+    """A progress_cb that raises must not abort plugin loading — the
+    _emit_progress guard must swallow the exception."""
+    plugins = reset_plugin_state
+    _make_plugin(tmp_path, "safe")
+
+    def bad_cb(event):
+        raise RuntimeError("spy exploded")
+
+    _run_load_plugins_with_cb(plugins, type("FakeApp", (), {})(), tmp_path, bad_cb)
+
+    # Plugin still registered despite cb explosion.
+    assert any(p["id"] == "safe" for p in plugins.LOADED_PLUGINS)
+
+
+def test_progress_cb_emits_plugin_error_on_requirements_failure(tmp_path, reset_plugin_state, monkeypatch):
+    """When _install_requirements returns False, a plugin-error event
+    with a non-empty error field must be emitted via progress_cb, and
+    plugin loading must still continue (non-fatal)."""
+    plugins = reset_plugin_state
+    _make_plugin(tmp_path, "req_fail")
+    # Force _install_requirements to report failure without actually running pip.
+    monkeypatch.setattr(plugins, "_install_requirements", lambda *a, **kw: False)
+
+    events = []
+    _run_load_plugins_with_cb(plugins, type("FakeApp", (), {})(), tmp_path, events.append)
+
+    error_events = [e for e in events if e["phase"] == "plugin-error" and e.get("plugin_id") == "req_fail"]
+    assert error_events, "Expected at least one plugin-error event for req_fail"
+    assert all(e["error"] for e in error_events), "plugin-error events must carry a non-empty error field"
+    # Loading continued: req_fail is still registered.
+    assert any(p["id"] == "req_fail" for p in plugins.LOADED_PLUGINS)

@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, Response
@@ -12,6 +13,10 @@ from fastapi.responses import HTMLResponse, Response
 
 PLUGINS_DIR = Path(__file__).parent
 LOADED_PLUGINS = []
+# Guards all mutations of and snapshots from LOADED_PLUGINS so the
+# background plugin-loader thread and the event-loop request handlers
+# never race on the list.
+PLUGINS_LOCK = threading.RLock()
 
 # Persistent pip install location (survives container restarts)
 _PIP_TARGET = Path(os.environ.get("CONFIG_DIR", "/config")) / "pip_packages"
@@ -326,8 +331,51 @@ def _install_requirements(plugin_dir: Path, plugin_id: str):
         return False
 
 
-def load_plugins(app: FastAPI, context: dict):
-    """Discover and load all plugins from built-in and user directories."""
+def load_plugins(app: FastAPI, context: dict, progress_cb=None, route_setup_fn=None):
+    """Discover and load all plugins from built-in and user directories.
+
+    progress_cb, when provided, receives structured progress events:
+    {
+      "phase": "<phase-id>",
+      "message": "<human text>",
+      "plugin_id": "<id or ''>",
+      "loaded": <int>,
+      "total": <int>,
+      "error": "<optional error text>"
+    }
+
+    route_setup_fn, when provided, is called instead of directly invoking
+    `routes_module.setup(app, ctx)`.  Callers that load plugins from a
+    background thread can pass a hook that marshals the call back to the
+    main thread (e.g. via loop.call_soon_threadsafe) to keep FastAPI/
+    Starlette router mutation on the event-loop thread.
+
+    Signature: route_setup_fn(fn: Callable[[], None]) -> None
+    where `fn` is a zero-argument callable that performs the setup call.
+    """
+
+    def _emit_progress(phase: str, message: str, plugin_id: str = "", loaded: int = 0,
+                       total: int = 0, error: str | None = None):
+        if not progress_cb:
+            return
+        try:
+            event: dict = {
+                "phase": phase,
+                "message": message,
+                "plugin_id": plugin_id,
+                "loaded": loaded,
+                "total": total,
+            }
+            # Omit the error key when there is no error so that downstream
+            # consumers using "status.error = event.error" don't accidentally
+            # clear a previously-reported plugin error on the next non-error
+            # progress event.
+            if error is not None:
+                event["error"] = error
+            progress_cb(event)
+        except Exception:
+            # Progress reporting must never break plugin startup.
+            pass
 
     # Collect plugin directories — user plugins first so they override built-in
     plugin_dirs = []
@@ -340,6 +388,7 @@ def load_plugins(app: FastAPI, context: dict):
         plugin_dirs.append(PLUGINS_DIR)
 
     if not plugin_dirs:
+        _emit_progress("plugins-complete", "No plugin directories found", loaded=0, total=0)
         return
 
     # Add persistent pip target to sys.path
@@ -399,9 +448,45 @@ def load_plugins(app: FastAPI, context: dict):
         [(plugin_id, plugin_dir) for plugin_id, plugin_dir, _ in plugin_load_specs]
     )
 
-    for plugin_id, plugin_dir, manifest in plugin_load_specs:
+    _emit_progress(
+        "plugins-discovered",
+        f"Discovered {len(plugin_load_specs)} plugin(s)",
+        loaded=0,
+        total=len(plugin_load_specs),
+    )
+
+    # Accumulate into a local list and publish atomically once all
+    # plugins are loaded, so concurrent readers never see a partially
+    # populated LOADED_PLUGINS.
+    _loaded_batch: list = []
+
+    for idx, (plugin_id, plugin_dir, manifest) in enumerate(plugin_load_specs):
+        _emit_progress(
+            "plugin-start",
+            f"Loading plugin '{plugin_id}'",
+            plugin_id=plugin_id,
+            loaded=idx,
+            total=len(plugin_load_specs),
+        )
+
         # Install plugin requirements if present
-        _install_requirements(plugin_dir, plugin_id)
+        _emit_progress(
+            "plugin-requirements",
+            f"Installing requirements for '{plugin_id}' (if needed)",
+            plugin_id=plugin_id,
+            loaded=idx,
+            total=len(plugin_load_specs),
+        )
+        req_ok = _install_requirements(plugin_dir, plugin_id)
+        if not req_ok:
+            _emit_progress(
+                "plugin-error",
+                f"Failed to install requirements for '{plugin_id}'",
+                plugin_id=plugin_id,
+                loaded=idx,
+                total=len(plugin_load_specs),
+                error="Requirements installation failed; check server logs for details",
+            )
 
         # Add plugin directory to sys.path so the plugin's bare
         # `import sibling` keeps working during the slopsmith#33
@@ -433,6 +518,13 @@ def load_plugins(app: FastAPI, context: dict):
         # Load routes using importlib to avoid module name collisions
         routes_file = manifest.get("routes")
         if routes_file:
+            _emit_progress(
+                "plugin-routes",
+                f"Loading routes for '{plugin_id}'",
+                plugin_id=plugin_id,
+                loaded=idx,
+                total=len(plugin_load_specs),
+            )
             try:
                 # Escape `.` in plugin_id the same way load_sibling
                 # does. Without it, a plugin id like
@@ -449,14 +541,31 @@ def load_plugins(app: FastAPI, context: dict):
                 sys.modules[module_name] = routes_module
                 spec.loader.exec_module(routes_module)
                 if hasattr(routes_module, "setup"):
-                    routes_module.setup(app, plugin_context)
+                    if route_setup_fn is not None:
+                        # Bind routes_module and plugin_context by value so
+                        # the callable is safe regardless of when/how
+                        # route_setup_fn dispatches it — avoids late-binding
+                        # closure bugs if the caller defers execution.
+                        _fn = lambda rm=routes_module, ctx=plugin_context: rm.setup(app, ctx)
+                        _fn._plugin_id = plugin_id
+                        route_setup_fn(_fn)
+                    else:
+                        routes_module.setup(app, plugin_context)
                     print(f"[Plugin] Loaded routes for '{plugin_id}'")
             except Exception as e:
                 print(f"[Plugin] Failed to load routes for '{plugin_id}': {e}")
+                _emit_progress(
+                    "plugin-error",
+                    f"Failed loading routes for '{plugin_id}'",
+                    plugin_id=plugin_id,
+                    loaded=idx,
+                    total=len(plugin_load_specs),
+                    error=str(e),
+                )
                 import traceback
                 traceback.print_exc()
 
-        LOADED_PLUGINS.append({
+        _loaded_batch.append({
             "id": plugin_id,
             "name": manifest.get("name", plugin_id),
             "nav": manifest.get("nav"),
@@ -478,6 +587,29 @@ def load_plugins(app: FastAPI, context: dict):
             "_manifest": manifest,
         })
         print(f"[Plugin] Registered '{plugin_id}' ({manifest.get('name', '')})")
+        _emit_progress(
+            "plugin-registered",
+            f"Registered plugin '{plugin_id}'",
+            plugin_id=plugin_id,
+            loaded=idx + 1,
+            total=len(plugin_load_specs),
+        )
+
+    # Publish all plugins atomically so concurrent readers never observe
+    # a partially-populated list during the loading window.  We clear
+    # first so that repeated load_plugins() calls (tests, dev reloads,
+    # future "reload plugins" feature) never accumulate duplicate entries
+    # while keeping the list object identity stable.
+    with PLUGINS_LOCK:
+        LOADED_PLUGINS.clear()
+        LOADED_PLUGINS.extend(_loaded_batch)
+
+    _emit_progress(
+        "plugins-complete",
+        f"Loaded {len(plugin_load_specs)} plugin(s)",
+        loaded=len(plugin_load_specs),
+        total=len(plugin_load_specs),
+    )
 
 
 def _check_plugin_update(plugin_dir: Path) -> dict | None:
@@ -518,6 +650,8 @@ def register_plugin_api(app: FastAPI):
 
     @app.get("/api/plugins")
     def list_plugins():
+        with PLUGINS_LOCK:
+            snapshot = list(LOADED_PLUGINS)
         return [
             {
                 "id": p["id"],
@@ -532,14 +666,16 @@ def register_plugin_api(app: FastAPI):
                 "has_script": p["has_script"],
                 "has_settings": p["has_settings"],
             }
-            for p in LOADED_PLUGINS
+            for p in snapshot
         ]
 
     @app.get("/api/plugins/updates")
     def check_updates():
         """Check all plugins for available git updates."""
+        with PLUGINS_LOCK:
+            snapshot = list(LOADED_PLUGINS)
         updates = {}
-        for p in LOADED_PLUGINS:
+        for p in snapshot:
             info = _check_plugin_update(p["_dir"])
             if info and info["behind"] > 0:
                 updates[p["id"]] = {
@@ -553,7 +689,9 @@ def register_plugin_api(app: FastAPI):
     @app.post("/api/plugins/{plugin_id}/update")
     def update_plugin(plugin_id: str):
         """Pull latest changes for a plugin. Stashes local edits first."""
-        for p in LOADED_PLUGINS:
+        with PLUGINS_LOCK:
+            snapshot = list(LOADED_PLUGINS)
+        for p in snapshot:
             if p["id"] == plugin_id:
                 git_dir = p["_dir"] / ".git"
                 if not git_dir.exists():
@@ -583,7 +721,9 @@ def register_plugin_api(app: FastAPI):
 
     @app.get("/api/plugins/{plugin_id}/screen.html")
     def plugin_screen_html(plugin_id: str):
-        for p in LOADED_PLUGINS:
+        with PLUGINS_LOCK:
+            snapshot = list(LOADED_PLUGINS)
+        for p in snapshot:
             if p["id"] == plugin_id:
                 screen_file = p["_dir"] / p["_manifest"].get("screen", "screen.html")
                 if screen_file.exists():
@@ -592,7 +732,9 @@ def register_plugin_api(app: FastAPI):
 
     @app.get("/api/plugins/{plugin_id}/screen.js")
     def plugin_screen_js(plugin_id: str):
-        for p in LOADED_PLUGINS:
+        with PLUGINS_LOCK:
+            snapshot = list(LOADED_PLUGINS)
+        for p in snapshot:
             if p["id"] == plugin_id:
                 script_file = p["_dir"] / p["_manifest"].get("script", "screen.js")
                 if script_file.exists():
@@ -601,7 +743,9 @@ def register_plugin_api(app: FastAPI):
 
     @app.get("/api/plugins/{plugin_id}/settings.html")
     def plugin_settings_html(plugin_id: str):
-        for p in LOADED_PLUGINS:
+        with PLUGINS_LOCK:
+            snapshot = list(LOADED_PLUGINS)
+        for p in snapshot:
             if p["id"] == plugin_id:
                 settings = p["_manifest"].get("settings", {})
                 settings_file = p["_dir"] / (settings.get("html", "settings.html") if isinstance(settings, dict) else "settings.html")

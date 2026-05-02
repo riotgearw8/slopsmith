@@ -665,6 +665,31 @@ def _extract_meta_for_file(psarc_path: Path) -> dict:
 _SCAN_STATUS_INIT = {"running": False, "stage": "idle", "total": 0, "done": 0, "current": "", "error": None}
 _scan_status = dict(_SCAN_STATUS_INIT)
 
+_STARTUP_STATUS_INIT = {
+    "running": True,
+    "phase": "booting",
+    "message": "Starting Slopsmith server...",
+    "current_plugin": "",
+    "loaded": 0,
+    "total": 0,
+    "error": None,
+}
+_startup_status = dict(_STARTUP_STATUS_INIT)
+_startup_status_lock = threading.Lock()
+
+
+def _set_startup_status(**updates):
+    global _startup_status
+    with _startup_status_lock:
+        next_status = dict(_startup_status)
+        next_status.update(updates)
+        _startup_status = next_status
+
+
+def _get_startup_status():
+    with _startup_status_lock:
+        return dict(_startup_status)
+
 
 def _background_scan():
     """Scan all PSARCs and cache metadata on startup. Uses thread pool for parallelism."""
@@ -768,15 +793,144 @@ register_plugin_api(app)
 
 
 @app.on_event("startup")
-def startup_events():
-    # Load plugins in background after server starts
-    load_plugins(app, {
+async def startup_events():
+    loop = asyncio.get_running_loop()
+
+    _set_startup_status(
+        running=True,
+        phase="starting",
+        message="Core server ready. Starting plugin loader...",
+        error=None,
+    )
+
+    plugin_context = {
         "config_dir": CONFIG_DIR,
         "get_dlc_dir": _get_dlc_dir,
         "extract_meta": _extract_meta_for_file,
         "meta_db": meta_db,
         "get_sloppak_cache_dir": lambda: SLOPPAK_CACHE_DIR,
-    })
+    }
+
+    # Load plugins asynchronously so HTTP routes and the desktop window can
+    # come up immediately while heavy plugin imports/install steps continue.
+    _sync_mode = os.environ.get("SLOPSMITH_SYNC_STARTUP", "").lower() in {"1", "true", "yes", "on"}
+
+    def _load_plugins_background():
+        try:
+            def _on_progress(event: dict):
+                total = int(event.get("total") or 0)
+                loaded = int(event.get("loaded") or 0)
+                plugin_id = event.get("plugin_id") or ""
+                message = event.get("message") or "Loading plugins..."
+                phase = event.get("phase") or "plugins-loading"
+                update: dict = dict(
+                    running=True,
+                    phase=phase,
+                    message=message,
+                    current_plugin=plugin_id,
+                    loaded=loaded,
+                    total=total,
+                )
+                # Only forward the error field when the event carries a real
+                # (non-null) error string.  This preserves any previously
+                # reported plugin error across the many subsequent non-error
+                # progress events that follow — without this guard the final
+                # `complete` status would almost always show `error: null`
+                # even when a plugin failed requirements or route setup.
+                if event.get("error") is not None:
+                    update["error"] = event["error"]
+                _set_startup_status(**update)
+
+            def _route_setup_on_main(fn):
+                """Schedule plugin route registration on the event-loop thread.
+
+                FastAPI/Starlette router mutation is not thread-safe, so the
+                actual setup() call is normally marshalled back onto the event
+                loop via call_soon_threadsafe.  The background thread blocks
+                until the registration completes, raises, or a 60 s timeout
+                elapses.
+
+                In synchronous startup mode (_sync_mode=True) this function is
+                called directly from the event-loop thread, so marshalling via
+                call_soon_threadsafe + fut.result() would deadlock (the loop
+                cannot drain the queued callback while it is blocked here).
+                In that case fn() is invoked inline instead.
+
+                On timeout (async mode only), startup continues normally.  Any
+                exception that eventually arrives is logged via a done-callback
+                so it is never silently dropped.
+                """
+                if _sync_mode:
+                    # Already on the event-loop thread — call directly.
+                    fn()
+                    return
+
+                fut: concurrent.futures.Future = concurrent.futures.Future()
+
+                def _do():
+                    try:
+                        fn()
+                        fut.set_result(None)
+                    except Exception as exc:
+                        fut.set_exception(exc)
+
+                loop.call_soon_threadsafe(_do)
+                try:
+                    fut.result(timeout=60)
+                except concurrent.futures.TimeoutError:
+                    _pid = getattr(fn, "_plugin_id", "unknown")
+                    print(f"[Plugin] WARNING: route registration for '{_pid}' timed out after 60 s", flush=True)
+
+                    def _log_deferred(f: concurrent.futures.Future):
+                        try:
+                            exc = f.exception()
+                        except concurrent.futures.CancelledError:
+                            return
+                        if exc is not None:
+                            print(f"[Plugin] ERROR: deferred route registration for '{_pid}' raised: {exc}", flush=True)
+
+                    fut.add_done_callback(_log_deferred)
+                    raise  # propagate to load_plugins() so it emits plugin-error and skips "Loaded routes"
+
+            _set_startup_status(
+                running=True,
+                phase="plugins-loading",
+                message="Loading plugins...",
+                current_plugin="",
+                loaded=0,
+                total=0,
+                error=None,
+            )
+            load_plugins(app, plugin_context, progress_cb=_on_progress,
+                         route_setup_fn=_route_setup_on_main)
+            status = _get_startup_status()
+            _set_startup_status(
+                running=False,
+                phase="complete",
+                message="Startup complete",
+                current_plugin="",
+                loaded=status.get("loaded", 0),
+                total=max(status.get("total", 0), status.get("loaded", 0)),
+                error=status.get("error"),
+            )
+        except Exception as e:
+            _set_startup_status(
+                running=False,
+                phase="error",
+                message="Plugin startup failed",
+                error=str(e),
+            )
+            import traceback
+            traceback.print_exc()
+
+    if _sync_mode:
+        # Caller requested synchronous startup (e.g. test environment).
+        # Run the loader inline so startup is complete before the server's
+        # startup handler returns — no polling or timing workarounds needed.
+        _load_plugins_background()
+    else:
+        threading.Thread(target=_load_plugins_background, daemon=True).start()
+
     # Start background metadata scan
     startup_scan()
 
@@ -818,6 +972,11 @@ def get_version():
 @app.get("/api/scan-status")
 def scan_status():
     return _scan_status
+
+
+@app.get("/api/startup-status")
+def startup_status():
+    return _get_startup_status()
 
 
 @app.post("/api/rescan")
@@ -1485,7 +1644,7 @@ def export_settings():
     server-side files. Frontend layers in `local_storage` before
     triggering the download. See slopsmith#113."""
     import datetime
-    from plugins import LOADED_PLUGINS
+    from plugins import LOADED_PLUGINS, PLUGINS_LOCK
 
     config_file = CONFIG_DIR / "config.json"
     server_config = _load_config(config_file)
@@ -1493,7 +1652,9 @@ def export_settings():
         server_config = _default_settings()
 
     plugin_blocks: dict[str, dict] = {}
-    for p in LOADED_PLUGINS:
+    with PLUGINS_LOCK:
+        plugins_snapshot = list(LOADED_PLUGINS)
+    for p in plugins_snapshot:
         allowed = p.get("_export_paths") or []
         plugin_blocks[p["id"]] = {"files": _walk_export_paths(allowed, CONFIG_DIR)}
 
@@ -1521,7 +1682,7 @@ def import_settings(bundle: dict):
     bundle in phase 1 (no disk writes); only on full success does
     phase 2 commit each file via temp+rename. The frontend reads
     `local_storage` itself — server ignores it. See slopsmith#113."""
-    from plugins import LOADED_PLUGINS
+    from plugins import LOADED_PLUGINS, PLUGINS_LOCK
 
     if not isinstance(bundle, dict):
         return JSONResponse({"ok": False, "error": "bundle must be a JSON object"}, status_code=400)
@@ -1565,7 +1726,8 @@ def import_settings(bundle: dict):
             f"version mismatch: bundle {bundle_version!r} vs running {running!r}; importing anyway"
         )
 
-    by_id = {p["id"]: p for p in LOADED_PLUGINS}
+    with PLUGINS_LOCK:
+        by_id = {p["id"]: p for p in LOADED_PLUGINS}
 
     # Stage every (display_relpath, target_abs_path, payload) tuple before
     # writing. The relpath is what we surface in the `partial` field on a
