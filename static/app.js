@@ -157,6 +157,13 @@ function _gridColumns(container) {
 // libraries make that a noticeable hot path.
 let _lastLibSelected = null;
 
+// Tracks which list screen launched the player so Esc-from-player
+// returns the user to that screen instead of always defaulting to
+// the Library (slopsmith#126). Reset on every `playSong` call so a
+// song launched from a deep-link / plugin screen still gets a sane
+// fallback ('home').
+let _playerOriginScreen = 'home';
+
 // One-shot flag set in `showScreen` when the user enters Home or
 // Favorites. Consumed by the very next library render so the
 // restored selection scrolls into view exactly once on screen entry
@@ -2231,6 +2238,13 @@ async function playSong(filename, arrangement) {
     clearLoop();
 
     currentFilename = filename;
+    // Remember which screen the player was launched from so Esc /
+    // navigation back from the player returns the user there
+    // (slopsmith#126). Falls back to 'home' if launched from
+    // somewhere unexpected (settings, a plugin screen, etc.).
+    const _launchFrom = document.querySelector('.screen.active');
+    _playerOriginScreen = (_launchFrom && (_launchFrom.id === 'home' || _launchFrom.id === 'favorites'))
+        ? _launchFrom.id : 'home';
     showScreen('player');
 
     // Wait for previous WebSocket to fully close before opening new one
@@ -2819,7 +2833,7 @@ document.addEventListener('keydown', e => {
     if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
     else if (e.code === 'ArrowLeft') seekBy(-5);
     else if (e.code === 'ArrowRight') seekBy(5);
-    else if (e.code === 'Escape') showScreen('home');
+    else if (e.code === 'Escape') showScreen(_playerOriginScreen || 'home');
     // A/V offset live-calibration — watch the highway and listen to
     // the audio while tuning. Shift for coarse ±50 ms, bare key for
     // fine ±10 ms. Match on e.key (the produced character) rather
