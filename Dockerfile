@@ -59,6 +59,7 @@ COPY lib/ /app/lib/
 COPY static/ /app/static/
 COPY plugins/ /app/plugins/
 COPY server.py /app/
+COPY main.py /app/
 COPY VERSION /app/
 
 ENV PYTHONPATH=/app/lib:/app
@@ -67,4 +68,9 @@ ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 
 EXPOSE 8000
 
-CMD uvicorn server:app --host 0.0.0.0 --port 8000
+# main.py calls configure_logging() before uvicorn.run(..., log_config=None),
+# which prevents uvicorn from applying its default dictConfig.  This ensures
+# the structlog pipeline is active for ALL uvicorn messages — including the
+# early lifecycle lines ("Started server process", "Waiting for application
+# startup") that fire before the ASGI startup hook.
+CMD python main.py

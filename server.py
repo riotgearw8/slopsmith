@@ -2,11 +2,17 @@
 
 import asyncio
 import json
+import logging
 import os
 import sys
 import tempfile
 import shutil
 from pathlib import Path
+
+from logging_setup import configure_logging
+configure_logging()
+
+log = logging.getLogger("slopsmith.server")
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.staticfiles import StaticFiles
@@ -179,6 +185,12 @@ async def _demo_mode_guard(request: Request, call_next):
             )
         return response
     return await call_next(request)
+
+from asgi_correlation_id import CorrelationIdMiddleware
+
+# validator=None accepts any non-empty inbound X-Request-ID value, including
+# opaque proxy-generated hex strings, not just RFC-4122 UUIDs.
+app.add_middleware(CorrelationIdMiddleware, validator=None)
 
 STATIC_DIR = Path(__file__).parent / "static"
 try:
@@ -949,6 +961,16 @@ register_plugin_api(app)
 
 @app.on_event("startup")
 async def startup_events():
+    # Safety net: re-apply the structlog pipeline in case the server was
+    # started directly via `uvicorn server:app` (without main.py).  When
+    # running via `python main.py`, configure_logging() was already called
+    # before uvicorn.run(..., log_config=None), so uvicorn never calls its
+    # own dictConfig() and this call is effectively a no-op.  When running
+    # the uvicorn CLI directly, uvicorn applies LOGGING_CONFIG before the
+    # ASGI startup hook fires, overwriting the uvicorn* handlers; this call
+    # restores them for all messages after "Waiting for application startup".
+    configure_logging()
+
     loop = asyncio.get_running_loop()
 
     _set_startup_status(

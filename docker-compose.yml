@@ -23,6 +23,10 @@ services:
       - CONFIG_DIR=/config
       - RSCLI_PATH=/opt/rscli/RsCli
       - DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
+      # Logging (optional)
+      # - LOG_LEVEL=DEBUG       # DEBUG | INFO | WARNING | ERROR  (default: INFO)
+      # - LOG_FORMAT=json       # json | text  (default: text — coloured console)
+      # - LOG_FILE=/config/slopsmith.log  # also write to a persistent file
     dns:
       - 8.8.8.8
       - 1.1.1.1

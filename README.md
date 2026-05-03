@@ -94,6 +94,16 @@ On first launch, the app scans your DLC folder and imports metadata. A progress 
 - **DLC Folder** — set in Settings or via the `DLC_PATH` environment variable
 - **Default Arrangement** — choose Lead, Rhythm, or Bass as the default when opening songs (Settings)
 
+### Logging
+
+Control log verbosity and format via environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LOG_LEVEL` | `INFO` | Severity threshold: `DEBUG`, `INFO`, `WARNING`, or `ERROR` |
+| `LOG_FORMAT` | `text` | `text` for coloured console output; `json` for structured output (Loki, ELK, Promtail) |
+| `LOG_FILE` | *(unset)* | If set, also write logs to this path (e.g. `/config/slopsmith.log`) |
+
 ### Docker Compose Example
 
 ```yaml
