@@ -2145,6 +2145,18 @@ function createHighway() {
         getStringCount() { return stringCount; },
         addDrawHook(fn) { _drawHooks.push(fn); },
         removeDrawHook(fn) { _drawHooks = _drawHooks.filter(h => h !== fn); },
+        /**
+         * Fire all registered draw hooks on the given 2D context.
+         * Custom renderers (e.g. the 3D highway) that maintain their own
+         * 2D overlay canvas should call this after each frame so overlay
+         * plugins that use addDrawHook() keep working regardless of which
+         * renderer is active.
+         */
+        fireDrawHooks(ctx, W, H) {
+            for (const hook of _drawHooks) {
+                try { hook(ctx, W, H); } catch (e) { /* ignore */ }
+            }
+        },
         project(tOffset) { return project(tOffset); },
         fretX(fret, scale, w) { return fretX(fret, scale, w); },
 

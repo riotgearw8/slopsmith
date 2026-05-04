@@ -1,0 +1,1011 @@
+<div role="group" aria-labelledby="h3d-palette-heading">
+    <h3 id="h3d-palette-heading" class="text-sm font-medium text-gray-400 mb-2">3D Highway — Palette</h3>
+    <p class="text-xs text-gray-500 mb-3">
+        Per-string color set used for note bodies, glows, sustain trails, and
+        lane lines. Settings here apply to all 3D Highway panels by default.
+    </p>
+
+    <!-- Palette -->
+    <div class="mt-3">
+        <label for="h3d-palette" class="text-xs font-medium text-gray-400 mb-1 block">Palette</label>
+        <select id="h3d-palette"
+            onchange="(window.h3dBgSetPalette || window.h3dSetPalette) && (window.h3dBgSetPalette || window.h3dSetPalette)(this.value); (window._h3dRenderPaletteSwatches || function(){})(this.value)"
+            class="w-full bg-dark-700 border border-gray-800 rounded-lg px-3 py-2 text-xs text-gray-300 outline-none">
+            <option value="default" selected>Default (Rocksmith classic)</option>
+            <option value="neon">Neon (saturated, electric)</option>
+            <option value="pastel">Pastel (soft, low contrast)</option>
+        </select>
+        <!-- Live preview of the selected palette. Each swatch is one
+             string in the standard six-string mapping (low E → high E,
+             left to right) — matching slopsmith's s=0..5 indexing. -->
+        <div class="mt-2 flex items-center gap-1" aria-hidden="true">
+            <span id="h3d-palette-swatch-0" class="inline-block h-6 w-5 rounded border border-gray-700/60"></span>
+            <span id="h3d-palette-swatch-1" class="inline-block h-6 w-5 rounded border border-gray-700/60"></span>
+            <span id="h3d-palette-swatch-2" class="inline-block h-6 w-5 rounded border border-gray-700/60"></span>
+            <span id="h3d-palette-swatch-3" class="inline-block h-6 w-5 rounded border border-gray-700/60"></span>
+            <span id="h3d-palette-swatch-4" class="inline-block h-6 w-5 rounded border border-gray-700/60"></span>
+            <span id="h3d-palette-swatch-5" class="inline-block h-6 w-5 rounded border border-gray-700/60"></span>
+        </div>
+        <div class="mt-1 flex items-center gap-1 text-[9px] text-gray-500 font-mono">
+            <span class="inline-block w-5 text-center">lo&nbsp;E</span>
+            <span class="inline-block w-5 text-center">A</span>
+            <span class="inline-block w-5 text-center">D</span>
+            <span class="inline-block w-5 text-center">G</span>
+            <span class="inline-block w-5 text-center">B</span>
+            <span class="inline-block w-5 text-center">hi&nbsp;E</span>
+        </div>
+    </div>
+</div>
+
+<div role="group" aria-labelledby="h3d-bg-heading" class="mt-6">
+    <h3 id="h3d-bg-heading" class="text-sm font-medium text-gray-400 mb-2">3D Highway — Background</h3>
+    <p class="text-xs text-gray-500 mb-3">
+        Subtle ambient animation in the distant fog area beyond the highway.
+        Settings here apply to all 3D Highway panels by default; per-panel
+        overrides can be set later (issue #13 follow-up).
+    </p>
+
+    <!-- Style -->
+    <div class="mt-3">
+        <label for="h3d-bg-style" class="text-xs font-medium text-gray-400 mb-1 block">Style</label>
+        <select id="h3d-bg-style"
+            onchange="window.h3dBgSetStyle && window.h3dBgSetStyle(this.value)"
+            class="w-full bg-dark-700 border border-gray-800 rounded-lg px-3 py-2 text-xs text-gray-300 outline-none">
+            <option value="off">Off</option>
+            <option value="particles" selected>Particles (drifting)</option>
+            <option value="silhouettes">Silhouettes (parallax)</option>
+            <option value="lights">Lights (stage glows)</option>
+            <option value="geometric">Geometric (rotating shapes)</option>
+            <option value="image" disabled>Custom image (none uploaded)</option>
+            <option value="video" disabled>Custom video (none uploaded)</option>
+        </select>
+    </div>
+
+    <!-- Intensity -->
+    <div class="mt-3">
+        <label for="h3d-bg-intensity" class="text-xs font-medium text-gray-400 mb-1 block">
+            Intensity: <span id="h3d-bg-intensity-label">0.50</span>
+        </label>
+        <input type="range" id="h3d-bg-intensity" min="0" max="1" step="0.05" value="0.5"
+            oninput="document.getElementById('h3d-bg-intensity-label').textContent = parseFloat(this.value).toFixed(2);"
+            onchange="window.h3dBgSetIntensity && window.h3dBgSetIntensity(this.value)"
+            class="w-full accent-accent">
+    </div>
+
+    <!-- Audio reactivity -->
+    <div class="flex items-center gap-3 mt-3">
+        <label class="flex items-center gap-2 text-sm text-gray-300">
+            <input type="checkbox" id="h3d-bg-reactive" checked
+                   onchange="window.h3dBgSetReactive && window.h3dBgSetReactive(this.checked)"
+                   class="accent-accent">
+            React to audio
+        </label>
+    </div>
+
+    <!-- Custom image upload (#19). Persisted in localStorage under
+         h3d_bg_customImageDataUrl (the base64 data URL that drives
+         the texture) and h3d_bg_customImageName (display-only
+         filename). Renders as the `image` bg style; the picker
+         option above auto-enables once an asset is uploaded. -->
+    <div class="mt-3">
+        <label for="h3d-bg-custom-image-file" class="text-xs font-medium text-gray-400 mb-1 block">Custom image</label>
+        <p class="text-xs text-gray-500 mb-2">
+            Upload a JPG/PNG/WebP (&le;1.5&nbsp;MB). Renders as a slowly
+            drifting backdrop in the fog band when the style above is set
+            to <em>Custom image</em>.
+        </p>
+        <div class="flex items-center gap-2">
+            <input type="file" id="h3d-bg-custom-image-file"
+                   accept="image/png,image/jpeg,image/webp"
+                   class="text-xs text-gray-300 file:mr-2 file:px-2 file:py-1 file:rounded file:border-0 file:bg-dark-600 file:text-gray-300">
+            <button type="button" id="h3d-bg-custom-image-clear"
+                    class="text-xs px-2 py-1 rounded bg-dark-700 border border-gray-800 text-gray-400 hover:text-gray-200">Clear</button>
+        </div>
+        <p id="h3d-bg-custom-image-name" class="text-xs text-gray-500 mt-1"></p>
+        <p id="h3d-bg-custom-image-error" class="text-xs text-red-400 mt-1 hidden"></p>
+    </div>
+
+    <!-- Custom video upload (#19 follow-up). Bytes live on disk via
+         the plugin's routes.py upload route; localStorage holds only
+         the server-side filename (h3d_bg_customVideoName). Renders as
+         the `video` bg style; the picker option above auto-enables
+         once an asset is uploaded. -->
+    <div class="mt-3">
+        <label for="h3d-bg-custom-video-file" class="text-xs font-medium text-gray-400 mb-1 block">Custom video</label>
+        <p class="text-xs text-gray-500 mb-2">
+            Upload an MP4 or WebM (&le;50&nbsp;MB). Plays muted, looped
+            in the fog band when the style above is set to
+            <em>Custom video</em>. Bytes stay on the slopsmith server,
+            not in the browser.
+        </p>
+        <div class="flex items-center gap-2">
+            <input type="file" id="h3d-bg-custom-video-file"
+                   accept="video/mp4,video/webm"
+                   class="text-xs text-gray-300 file:mr-2 file:px-2 file:py-1 file:rounded file:border-0 file:bg-dark-600 file:text-gray-300">
+            <button type="button" id="h3d-bg-custom-video-clear"
+                    class="text-xs px-2 py-1 rounded bg-dark-700 border border-gray-800 text-gray-400 hover:text-gray-200">Clear</button>
+        </div>
+        <p id="h3d-bg-custom-video-name" class="text-xs text-gray-500 mt-1"></p>
+        <p id="h3d-bg-custom-video-error" class="text-xs text-red-400 mt-1 hidden"></p>
+    </div>
+</div>
+
+<div role="group" aria-labelledby="h3d-camera-heading" class="mt-6">
+    <h3 id="h3d-camera-heading" class="text-sm font-medium text-gray-400 mb-2">3D Highway — Camera</h3>
+    <p class="text-xs text-gray-500 mb-3">
+        The camera tracks your upcoming notes — panning along the
+        fretboard, zooming for wide chords, and tilting to keep the
+        playing area centred. Defaults are tuned for general use;
+        open <em>Advanced camera settings</em> below to fine-tune
+        each axis independently, lock the camera to first position,
+        or scale on-screen text. Changes apply immediately while
+        playing — no reload required.
+    </p>
+
+    <details class="mt-4 rounded-lg border border-gray-800 bg-dark-700/40">
+        <summary class="cursor-pointer select-none px-3 py-2 text-xs font-medium text-gray-400 hover:text-gray-200">
+            Advanced camera settings
+        </summary>
+        <div class="px-3 pb-3 pt-1">
+            <p class="text-[10px] text-gray-500 mb-3">
+                Per-axis tuning, a hard lock for songs that mostly stay in
+                first position, and a global text-size dial. Most players
+                don't need to touch these.
+            </p>
+
+            <div class="mt-3">
+                <label for="h3d-camera-smoothing" class="text-xs font-medium text-gray-400 mb-1 block">
+                    Camera smoothing (X-pan): <span id="h3d-camera-smoothing-label">0.50</span>
+                </label>
+                <input type="range" id="h3d-camera-smoothing" min="0" max="1" step="0.05" value="0.5"
+                    oninput="document.getElementById('h3d-camera-smoothing-label').textContent = parseFloat(this.value).toFixed(2);"
+                    onchange="window.h3dBgSetCameraSmoothing && window.h3dBgSetCameraSmoothing(this.value)"
+                    class="w-full accent-accent">
+                <p class="text-[10px] text-gray-500 mt-1">
+                    How aggressively the camera chases your upcoming notes
+                    side-to-side along the fretboard. Lower values
+                    (toward <em>Twitchy</em>) make the camera respond
+                    quickly to every shift, even small ones — useful
+                    if you want the view tightly centred on the next
+                    note at all times. Higher values (toward <em>Calm</em>)
+                    ignore small intra-position movement and only pan
+                    when the upcoming notes really shift to a new
+                    region of the neck (e.g. an open-position riff
+                    into a 12th-fret solo). Large position changes
+                    still pan smoothly at any setting.
+                </p>
+                <div class="flex justify-between text-[10px] text-gray-500 mt-1">
+                    <span>Twitchy</span>
+                    <span>Calm</span>
+                </div>
+            </div>
+
+            <div class="mt-3">
+                <label for="h3d-zoom-smoothing" class="text-xs font-medium text-gray-400 mb-1 block">
+                    Zoom smoothing: <span id="h3d-zoom-smoothing-label">0.50</span>
+                </label>
+                <input type="range" id="h3d-zoom-smoothing" min="0" max="1" step="0.05" value="0.5"
+                    oninput="document.getElementById('h3d-zoom-smoothing-label').textContent = parseFloat(this.value).toFixed(2);"
+                    onchange="window.h3dBgSetZoomSmoothing && window.h3dBgSetZoomSmoothing(this.value)"
+                    class="w-full accent-accent">
+                <p class="text-[10px] text-gray-500 mt-1">
+                    Calmness of the camera pulling back for wide chords. Calm settings
+                    ignore short bursts of high-fret notes that would otherwise pop the
+                    camera back and forward.
+                </p>
+                <div class="flex justify-between text-[10px] text-gray-500 mt-1">
+                    <span>Twitchy</span>
+                    <span>Calm</span>
+                </div>
+            </div>
+
+            <div class="mt-3">
+                <label for="h3d-tilt-smoothing" class="text-xs font-medium text-gray-400 mb-1 block">
+                    Tilt smoothing: <span id="h3d-tilt-smoothing-label">0.50</span>
+                </label>
+                <input type="range" id="h3d-tilt-smoothing" min="0" max="1" step="0.05" value="0.5"
+                    oninput="document.getElementById('h3d-tilt-smoothing-label').textContent = parseFloat(this.value).toFixed(2);"
+                    onchange="window.h3dBgSetTiltSmoothing && window.h3dBgSetTiltSmoothing(this.value)"
+                    class="w-full accent-accent">
+                <p class="text-[10px] text-gray-500 mt-1">
+                    How aggressively the camera re-frames vertically when the fretboard
+                    drifts. Calm = let small drift ride; Twitchy = re-centre often.
+                </p>
+                <div class="flex justify-between text-[10px] text-gray-500 mt-1">
+                    <span>Twitchy</span>
+                    <span>Calm</span>
+                </div>
+            </div>
+
+            <div class="mt-4 flex items-start gap-2">
+                <input type="checkbox" id="h3d-camera-lock-low" class="mt-1 accent-accent"
+                    onchange="window.h3dBgSetCameraLockLow && window.h3dBgSetCameraLockLow(this.checked)">
+                <label for="h3d-camera-lock-low" class="text-xs text-gray-300 cursor-pointer">
+                    <span class="font-medium">Lock camera at frets 1–12.</span>
+                    <span class="block text-[10px] text-gray-500 mt-1">
+                        When enabled, the camera stops moving as long as all upcoming
+                        notes are at fret 12 or below. If a note higher than fret 12
+                        comes down the highway, the camera widens to include it and
+                        returns to the locked view once it's gone. Overrides the
+                        X-pan and zoom smoothing above while engaged; tilt smoothing
+                        still applies.
+                    </span>
+                </label>
+            </div>
+
+            <div class="mt-3 ml-6">
+                <label for="h3d-camera-lock-zoom" class="text-xs font-medium text-gray-400 mb-1 block">
+                    Locked zoom: <span id="h3d-camera-lock-zoom-label">0.50</span>
+                </label>
+                <input type="range" id="h3d-camera-lock-zoom" min="0" max="1" step="0.05" value="0.5"
+                    oninput="document.getElementById('h3d-camera-lock-zoom-label').textContent = parseFloat(this.value).toFixed(2);"
+                    onchange="window.h3dBgSetCameraLockZoom && window.h3dBgSetCameraLockZoom(this.value)"
+                    class="w-full accent-accent">
+                <p class="text-[10px] text-gray-500 mt-1">
+                    Adjusts the camera distance while the lock is engaged. Drag toward
+                    <em>In</em> to bring the fretboard closer (notes appear larger);
+                    toward <em>Out</em> to fit more onscreen. Has no effect when the
+                    lock is off.
+                </p>
+                <div class="flex justify-between text-[10px] text-gray-500 mt-1">
+                    <span>In</span>
+                    <span>Out</span>
+                </div>
+            </div>
+
+            <div class="mt-4">
+                <label for="h3d-text-size" class="text-xs font-medium text-gray-400 mb-1 block">
+                    Text size: <span id="h3d-text-size-label">0.50</span>
+                </label>
+                <input type="range" id="h3d-text-size" min="0" max="1" step="0.05" value="0.5"
+                    oninput="document.getElementById('h3d-text-size-label').textContent = parseFloat(this.value).toFixed(2);"
+                    onchange="window.h3dBgSetTextSize && window.h3dBgSetTextSize(this.value)"
+                    class="w-full accent-accent">
+                <p class="text-[10px] text-gray-500 mt-1">
+                    Scales every text sprite in the scene — chord names, fret
+                    numbers, technique markers (bend / slide / H/P/T), section
+                    banners. Default 0.50 = 1.0× (no change). 0 = 0.5×, 1 = 1.5×.
+                </p>
+                <div class="flex justify-between text-[10px] text-gray-500 mt-1">
+                    <span>Smaller</span>
+                    <span>Larger</span>
+                </div>
+            </div>
+
+            <div class="mt-4">
+                <label for="h3d-vibrancy" class="text-xs font-medium text-gray-400 mb-1 block">
+                    Vibrancy: <span id="h3d-vibrancy-label">0.85</span>
+                </label>
+                <input type="range" id="h3d-vibrancy" min="0" max="1" step="0.05" value="0.85"
+                    oninput="document.getElementById('h3d-vibrancy-label').textContent = parseFloat(this.value).toFixed(2); window.h3dBgSetVibrancy && window.h3dBgSetVibrancy(this.value)"
+                    onchange="window.h3dBgSetVibrancy && window.h3dBgSetVibrancy(this.value)"
+                    class="w-full accent-accent">
+                <p class="text-[10px] text-gray-500 mt-1">
+                    How vivid idle strings, note bodies, and sustains read against
+                    the dark scene. <em>Pastel</em> matches the original washed-out
+                    look (low opacity, hit notes wash toward white); <em>Vivid</em>
+                    keeps strings/notes solid and lets each string's colour come
+                    through cleanly even when the note hits.
+                </p>
+                <div class="flex justify-between text-[10px] text-gray-500 mt-1">
+                    <span>Pastel</span>
+                    <span>Vivid</span>
+                </div>
+            </div>
+
+            <div class="mt-4">
+                <label for="h3d-glow" class="text-xs font-medium text-gray-400 mb-1 block">
+                    Glow: <span id="h3d-glow-label">0.25</span>
+                </label>
+                <input type="range" id="h3d-glow" min="0" max="1" step="0.05" value="0.25"
+                    oninput="document.getElementById('h3d-glow-label').textContent = parseFloat(this.value).toFixed(2); window.h3dBgSetGlow && window.h3dBgSetGlow(this.value)"
+                    onchange="window.h3dBgSetGlow && window.h3dBgSetGlow(this.value)"
+                    class="w-full accent-accent">
+                <p class="text-[10px] text-gray-500 mt-1">
+                    How much halo / bloom builds up around hit notes, sustain
+                    outlines, technique markers, and the projection ghost layer.
+                    <em>Off</em> kills emissive everywhere (flat-shaded look,
+                    projection ghost layer hidden); <em>Glowy</em> matches the
+                    original bright look. Anticipation pulse on idle strings is
+                    silenced at <em>Off</em> too.
+                </p>
+                <div class="flex justify-between text-[10px] text-gray-500 mt-1">
+                    <span>Off</span>
+                    <span>Glowy</span>
+                </div>
+            </div>
+        </div>
+    </details>
+</div>
+
+<div role="group" aria-labelledby="h3d-notes-heading" class="mt-6">
+    <h3 id="h3d-notes-heading" class="text-sm font-medium text-gray-400 mb-2">3D Highway — Notes</h3>
+    <p class="text-xs text-gray-500 mb-3">
+        Per-note display options.
+    </p>
+
+    <!-- Show fret number on note body (#12) -->
+    <div class="flex items-center gap-3 mt-3">
+        <label class="flex items-center gap-2 text-sm text-gray-300">
+            <input type="checkbox" id="h3d-show-fret-on-note"
+                   onchange="window.h3dBgSetShowFretOnNote && window.h3dBgSetShowFretOnNote(this.checked)"
+                   class="accent-accent">
+            Show fret numbers on notes
+        </label>
+    </div>
+</div>
+
+<div role="group" aria-labelledby="h3d-chord-diag-heading" class="mt-6">
+    <h3 id="h3d-chord-diag-heading" class="text-sm font-medium text-gray-400 mb-2">3D Highway — Chord Diagram</h3>
+    <p class="text-xs text-gray-500 mb-3">
+        Overlay shown when a named chord is hit. Fades out after impact.
+    </p>
+
+    <!-- Size slider -->
+    <div class="mt-3">
+        <label for="h3d-chord-diagram-size" class="text-xs font-medium text-gray-400 mb-1 block">
+            Size: <span id="h3d-chord-diagram-size-label">0.50</span>
+        </label>
+        <input type="range" id="h3d-chord-diagram-size" min="0" max="1" step="0.05" value="0.5"
+            oninput="document.getElementById('h3d-chord-diagram-size-label').textContent = parseFloat(this.value).toFixed(2); window.h3dBgSetChordDiagramSize && window.h3dBgSetChordDiagramSize(this.value)"
+            onchange="window.h3dBgSetChordDiagramSize && window.h3dBgSetChordDiagramSize(this.value)"
+            class="w-full accent-accent">
+        <div class="flex justify-between text-[10px] text-gray-500 mt-1"><span>Small</span><span>Large</span></div>
+    </div>
+
+    <!-- Position dropdown -->
+    <div class="mt-3">
+        <label for="h3d-chord-diagram-position" class="text-xs font-medium text-gray-400 mb-1 block">Position</label>
+        <select id="h3d-chord-diagram-position"
+            onchange="window.h3dBgSetChordDiagramPosition && window.h3dBgSetChordDiagramPosition(this.value)"
+            class="w-full bg-dark-700 border border-gray-800 rounded-lg px-3 py-2 text-xs text-gray-300 outline-none">
+            <option value="tl" selected>Top-left</option>
+            <option value="tr">Top-right</option>
+            <option value="bl">Bottom-left</option>
+            <option value="br">Bottom-right</option>
+        </select>
+    </div>
+
+    <!-- Hydrate from localStorage on load. Mirror runtime defaults AND
+         coercion rules from screen.js's BG_DEFAULTS / _bgCoerce so first-
+         run users see what the renderer actually drew, and any garbage
+         in localStorage (out-of-range intensity, unknown style id) is
+         clamped to a valid value instead of putting the controls in a
+         no-selection / NaN state. -->
+    <script>
+        (function () {
+            const DEFAULTS = { style: 'particles', intensity: 0.5, reactive: true, palette: 'default', showFretOnNote: false, cameraSmoothing: 0.5, zoomSmoothing: 0.5, tiltSmoothing: 0.5, cameraLockLow: false, cameraLockZoom: 0.5, textSize: 0.5, vibrancy: 0.85, glow: 0.25, customImageDataUrl: '', customImageName: '', customVideoName: '', chordDiagramSize: 0.5, chordDiagramPosition: 'tl' };
+            const VALID_STYLES = new Set(['off', 'particles', 'silhouettes', 'lights', 'geometric', 'image', 'video']);
+            const VALID_PALETTES = new Set(['default', 'neon', 'pastel']);
+            const VALID_CHORD_DIAG_POSITIONS = new Set(['tl', 'tr', 'bl', 'br']);
+            // Custom images are persisted as base64 data URLs in
+            // localStorage. base64 expands the byte count by ~4/3, and
+            // localStorage values are stored as UTF-16 (two bytes per
+            // character), so the on-disk footprint is ~2.67× the raw
+            // file size. localStorage quotas are typically 5 MB per
+            // origin and slopsmith already uses some of that for other
+            // settings, so a 1.5 MB raw limit (≈4 MB on disk) leaves
+            // safe headroom; the read-back verification below catches
+            // remaining edge cases where the write still gets refused.
+            const MAX_IMAGE_BYTES = Math.floor(1.5 * 1024 * 1024);
+            // Hard cap on the encoded data URL length as a second line
+            // of defense. base64 expands raw by ~4/3, so a max-size
+            // (1.5 MB) upload encodes to ~2.0 M chars + a short
+            // `data:image/...;base64,` prefix. 2.5 M chars gives ~25%
+            // headroom to catch outliers without ever firing on
+            // legitimate uploads that already pass MAX_IMAGE_BYTES.
+            // Mirrored in screen.js as a renderer-side guard against
+            // legacy / manually-edited localStorage payloads.
+            const MAX_DATA_URL_CHARS = Math.floor(2.5 * 1024 * 1024);
+            // Strict whitelist of allowed file MIME types, matching the
+            // file picker's `accept` attribute and screen.js's
+            // upfront `^data:image/(jpeg|png|webp);` validator.
+            const ALLOWED_IMAGE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+            // Defense against decompression bombs — a small ≤1.5 MB
+            // file can decode to enormous pixel dimensions (e.g.
+            // 50000×50000), which would allocate gigabytes of GPU
+            // memory once Three.js uploads it as a texture and almost
+            // certainly crash the tab. 4096 per axis is plenty for a
+            // backdrop (more pixels are wasted at fog-band distance);
+            // 16 MP total catches non-square shapes that pass the
+            // per-axis cap but still aggregate to a huge area.
+            const MAX_IMAGE_DIM = 4096;
+            const MAX_IMAGE_PIXELS = 16 * 1024 * 1024;
+
+            // Video uploads go to disk via routes.py — no localStorage
+            // expansion to worry about, so the cap is just "what's
+            // reasonable for a backdrop loop" (a 50 MB MP4 covers ~30
+            // seconds at 1080p, plenty for a stage backdrop).
+            const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
+            const ALLOWED_VIDEO_MIMES = new Set(['video/mp4', 'video/webm']);
+            // Server-side filenames are deterministic single-slot
+            // (current.<ext>); this pattern matches what routes.py
+            // produces and what screen.js's video style validates.
+            // Case-sensitive: routes.py only ever produces lowercase
+            // (it lowercases the upload extension) and only serves
+            // lowercase. Callers are responsible for lowercasing the
+            // candidate name before testing.
+            const VIDEO_FILENAME_RE = /^current\.(mp4|webm)$/;
+            const VIDEO_UPLOAD_URL = '/api/plugins/highway_3d/files';
+
+            function coerceStyle(v) { return VALID_STYLES.has(v) ? v : DEFAULTS.style; }
+            function coercePalette(v) { return VALID_PALETTES.has(v) ? v : DEFAULTS.palette; }
+            function coerceIntensity(v) {
+                const n = parseFloat(v);
+                if (!Number.isFinite(n)) return DEFAULTS.intensity;
+                return Math.max(0, Math.min(1, n));
+            }
+            // Generic 0..1 clamp + parseFloat with an explicit fallback.
+            // Each unit-interval slider passes its own DEFAULTS[key] so a
+            // future bound change on one setting doesn't drag the others
+            // along, and so this stays in sync with screen.js's _bgCoerce
+            // which also keys the fallback to BG_DEFAULTS[key].
+            function coerceUnitInterval(v, fallback) {
+                const n = parseFloat(v);
+                if (!Number.isFinite(n)) return fallback;
+                return Math.max(0, Math.min(1, n));
+            }
+            function coerceBool(v, fallback) {
+                if (v === null || v === undefined) return fallback;
+                if (v === 'true'  || v === '1') return true;
+                if (v === 'false' || v === '0') return false;
+                return fallback;
+            }
+
+            let storedStyle = null, storedI = null, storedR = null, storedPalette = null, storedFretOnNote = null;
+            let storedCameraSmoothing = null;
+            let storedCustomImageDataUrl = null, storedCustomImageName = null;
+            let storedCustomVideoName = null;
+            let storedZoomSmoothing = null;
+            let storedTiltSmoothing = null;
+            let storedCameraLockLow = null;
+            let storedCameraLockZoom = null;
+            let storedTextSize = null;
+            let storedVibrancy = null;
+            let storedGlow = null;
+            let storedChordDiagramSize = null;
+            let storedChordDiagramPosition = null;
+            try {
+                storedStyle = localStorage.getItem('h3d_bg_style');
+                storedI = localStorage.getItem('h3d_bg_intensity');
+                storedR = localStorage.getItem('h3d_bg_reactive');
+                storedPalette = localStorage.getItem('h3d_bg_palette');
+                storedFretOnNote = localStorage.getItem('h3d_bg_showFretOnNote');
+                storedCameraSmoothing = localStorage.getItem('h3d_bg_cameraSmoothing');
+                storedZoomSmoothing = localStorage.getItem('h3d_bg_zoomSmoothing');
+                storedTiltSmoothing = localStorage.getItem('h3d_bg_tiltSmoothing');
+                storedCameraLockLow = localStorage.getItem('h3d_bg_cameraLockLow');
+                storedCameraLockZoom = localStorage.getItem('h3d_bg_cameraLockZoom');
+                storedTextSize = localStorage.getItem('h3d_bg_textSize');
+                storedVibrancy = localStorage.getItem('h3d_bg_vibrancy');
+                storedGlow = localStorage.getItem('h3d_bg_glow');
+                storedChordDiagramSize = localStorage.getItem('h3d_bg_chordDiagramSize');
+                storedChordDiagramPosition = localStorage.getItem('h3d_bg_chordDiagramPosition');
+                storedCustomImageDataUrl = localStorage.getItem('h3d_bg_customImageDataUrl');
+                storedCustomImageName = localStorage.getItem('h3d_bg_customImageName');
+                storedCustomVideoName = localStorage.getItem('h3d_bg_customVideoName');
+            } catch (_) { /* storage blocked */ }
+
+            const style = coerceStyle(storedStyle);
+            const intensity = coerceIntensity(storedI);
+            const reactive = coerceBool(storedR, DEFAULTS.reactive);
+            const palette = coercePalette(storedPalette);
+            const showFretOnNote = coerceBool(storedFretOnNote, DEFAULTS.showFretOnNote);
+            const cameraSmoothing = coerceUnitInterval(storedCameraSmoothing, DEFAULTS.cameraSmoothing);
+            // zoom + tilt smoothing mirror cameraSmoothing on first read so
+            // existing users carry their calmness over to the new axes.
+            // After the user moves either slider once, the stored value
+            // takes over and the two become independent.
+            const zoomSmoothing = (storedZoomSmoothing == null)
+                ? cameraSmoothing
+                : coerceUnitInterval(storedZoomSmoothing, DEFAULTS.zoomSmoothing);
+            const tiltSmoothing = (storedTiltSmoothing == null)
+                ? cameraSmoothing
+                : coerceUnitInterval(storedTiltSmoothing, DEFAULTS.tiltSmoothing);
+            const cameraLockLow = coerceBool(storedCameraLockLow, DEFAULTS.cameraLockLow);
+            const cameraLockZoom = (storedCameraLockZoom == null)
+                ? DEFAULTS.cameraLockZoom
+                : coerceUnitInterval(storedCameraLockZoom, DEFAULTS.cameraLockZoom);
+            const textSize = (storedTextSize == null)
+                ? DEFAULTS.textSize
+                : coerceUnitInterval(storedTextSize, DEFAULTS.textSize);
+            const vibrancy = (storedVibrancy == null)
+                ? DEFAULTS.vibrancy
+                : coerceUnitInterval(storedVibrancy, DEFAULTS.vibrancy);
+            const glow = (storedGlow == null)
+                ? DEFAULTS.glow
+                : coerceUnitInterval(storedGlow, DEFAULTS.glow);
+            const chordDiagramSize = (storedChordDiagramSize == null)
+                ? DEFAULTS.chordDiagramSize
+                : coerceUnitInterval(storedChordDiagramSize, DEFAULTS.chordDiagramSize);
+            const chordDiagramPosition = (storedChordDiagramPosition !== null && VALID_CHORD_DIAG_POSITIONS.has(storedChordDiagramPosition))
+                ? storedChordDiagramPosition
+                : DEFAULTS.chordDiagramPosition;
+            const customImageDataUrl = (typeof storedCustomImageDataUrl === 'string') ? storedCustomImageDataUrl : DEFAULTS.customImageDataUrl;
+            const customImageName    = (typeof storedCustomImageName === 'string')    ? storedCustomImageName    : DEFAULTS.customImageName;
+            const customVideoName    = (typeof storedCustomVideoName === 'string')    ? storedCustomVideoName    : DEFAULTS.customVideoName;
+
+            const sel = document.getElementById('h3d-bg-style');
+            const sli = document.getElementById('h3d-bg-intensity');
+            const lbl = document.getElementById('h3d-bg-intensity-label');
+            const rea = document.getElementById('h3d-bg-reactive');
+            const pal = document.getElementById('h3d-palette');
+            const fon = document.getElementById('h3d-show-fret-on-note');
+            const csli = document.getElementById('h3d-camera-smoothing');
+            const clbl = document.getElementById('h3d-camera-smoothing-label');
+            const zsli = document.getElementById('h3d-zoom-smoothing');
+            const zlbl = document.getElementById('h3d-zoom-smoothing-label');
+            const tsli = document.getElementById('h3d-tilt-smoothing');
+            const tlbl = document.getElementById('h3d-tilt-smoothing-label');
+            const cll  = document.getElementById('h3d-camera-lock-low');
+            const lzli = document.getElementById('h3d-camera-lock-zoom');
+            const lzlbl = document.getElementById('h3d-camera-lock-zoom-label');
+            const tsi  = document.getElementById('h3d-text-size');
+            const tslbl = document.getElementById('h3d-text-size-label');
+            const vsli = document.getElementById('h3d-vibrancy');
+            const vlbl = document.getElementById('h3d-vibrancy-label');
+            const gsli  = document.getElementById('h3d-glow');
+            const glbl  = document.getElementById('h3d-glow-label');
+            const cdsli = document.getElementById('h3d-chord-diagram-size');
+            const cdslbl= document.getElementById('h3d-chord-diagram-size-label');
+            const cdpos = document.getElementById('h3d-chord-diagram-position');
+            const fileInput = document.getElementById('h3d-bg-custom-image-file');
+            const clearBtn  = document.getElementById('h3d-bg-custom-image-clear');
+            const nameP     = document.getElementById('h3d-bg-custom-image-name');
+            const errorP    = document.getElementById('h3d-bg-custom-image-error');
+            const videoFileInput = document.getElementById('h3d-bg-custom-video-file');
+            const videoClearBtn  = document.getElementById('h3d-bg-custom-video-clear');
+            const videoNameP     = document.getElementById('h3d-bg-custom-video-name');
+            const videoErrorP    = document.getElementById('h3d-bg-custom-video-error');
+            if (sli) sli.value = String(intensity);
+            if (lbl) lbl.textContent = intensity.toFixed(2);
+            if (pal) pal.value = palette;
+            if (rea) rea.checked = reactive;
+            if (fon) fon.checked = showFretOnNote;
+            if (csli) csli.value = String(cameraSmoothing);
+            if (clbl) clbl.textContent = cameraSmoothing.toFixed(2);
+            if (zsli) zsli.value = String(zoomSmoothing);
+            if (zlbl) zlbl.textContent = zoomSmoothing.toFixed(2);
+            if (tsli) tsli.value = String(tiltSmoothing);
+            if (tlbl) tlbl.textContent = tiltSmoothing.toFixed(2);
+            if (cll)  cll.checked  = cameraLockLow;
+            if (lzli) lzli.value = String(cameraLockZoom);
+            if (lzlbl) lzlbl.textContent = cameraLockZoom.toFixed(2);
+            if (tsi)  tsi.value  = String(textSize);
+            if (tslbl) tslbl.textContent = textSize.toFixed(2);
+            if (vsli) vsli.value = String(vibrancy);
+            if (vlbl) vlbl.textContent = vibrancy.toFixed(2);
+            if (gsli)  gsli.value  = String(glow);
+            if (glbl)  glbl.textContent = glow.toFixed(2);
+            if (cdsli) cdsli.value  = String(chordDiagramSize);
+            if (cdslbl) cdslbl.textContent = chordDiagramSize.toFixed(2);
+            if (cdpos) cdpos.value  = chordDiagramPosition;
+
+            // Palette preview swatches. Mirror of PALETTES in screen.js —
+            // KEEP IN SYNC. Settings panel paints these from the dropdown
+            // selection so users can preview a palette before committing.
+            // Only the first six entries (low E → high E) are shown
+            // because that's the standard 6-string layout most charts
+            // use; 7/8-string supplementary slots aren't rendered here.
+            const PALETTE_HEXES = {
+                default: ['#ff2828', '#ffd400', '#2080ff', '#ff8020', '#30d040', '#a040ff'],
+                neon:    ['#ff0030', '#ffe800', '#0080ff', '#ff8030', '#40ff50', '#b050ff'],
+                pastel:  ['#e89aa0', '#efdf90', '#9adfee', '#efb898', '#a6e0a8', '#c4a6e0'],
+            };
+            function renderPaletteSwatches(paletteId) {
+                const hexes = PALETTE_HEXES[paletteId] || PALETTE_HEXES.default;
+                for (let i = 0; i < 6; i++) {
+                    const el = document.getElementById('h3d-palette-swatch-' + i);
+                    if (el) el.style.backgroundColor = hexes[i];
+                }
+            }
+            // Expose globally so the dropdown's onchange handler can call
+            // this directly without needing the IIFE's scope.
+            window._h3dRenderPaletteSwatches = renderPaletteSwatches;
+            renderPaletteSwatches(palette);
+
+            function imageOption() {
+                if (!sel) return null;
+                for (let i = 0; i < sel.options.length; i++) {
+                    if (sel.options[i].value === 'image') return sel.options[i];
+                }
+                return null;
+            }
+            // Reflect "is there an asset?" in the picker. Keeping this
+            // tied to data presence (rather than a separate flag) means
+            // a clear-then-refresh cycle stays consistent without extra
+            // bookkeeping.
+            function refreshImageOptionState(hasAsset, displayName) {
+                const opt = imageOption();
+                if (opt) {
+                    opt.disabled = !hasAsset;
+                    opt.textContent = hasAsset
+                        ? ('Custom image' + (displayName ? ' — ' + displayName : ''))
+                        : 'Custom image (none uploaded)';
+                }
+                if (nameP) nameP.textContent = hasAsset
+                    ? ('Current: ' + (displayName || 'unnamed'))
+                    : 'No image uploaded.';
+            }
+            function showError(msg) {
+                if (!errorP) return;
+                errorP.textContent = msg;
+                errorP.classList.remove('hidden');
+            }
+            function clearError() {
+                if (!errorP) return;
+                errorP.textContent = '';
+                errorP.classList.add('hidden');
+            }
+
+            function videoOption() {
+                if (!sel) return null;
+                for (let i = 0; i < sel.options.length; i++) {
+                    if (sel.options[i].value === 'video') return sel.options[i];
+                }
+                return null;
+            }
+            function refreshVideoOptionState(hasVideo, displayName) {
+                const opt = videoOption();
+                if (opt) {
+                    opt.disabled = !hasVideo;
+                    opt.textContent = hasVideo
+                        ? ('Custom video' + (displayName ? ' — ' + displayName : ''))
+                        : 'Custom video (none uploaded)';
+                }
+                if (videoNameP) videoNameP.textContent = hasVideo
+                    ? ('Current: ' + (displayName || 'unnamed'))
+                    : 'No video uploaded.';
+            }
+            function showVideoError(msg) {
+                if (!videoErrorP) return;
+                videoErrorP.textContent = msg;
+                videoErrorP.classList.remove('hidden');
+            }
+            function clearVideoError() {
+                if (!videoErrorP) return;
+                videoErrorP.textContent = '';
+                videoErrorP.classList.add('hidden');
+            }
+
+            // hasAsset must use the same validator as screen.js. A bare
+            // truthy check would treat whitespace, garbage strings, or
+            // unsupported types (e.g. data:image/svg+xml left over from
+            // an older version's storage) as "asset present" and let
+            // the UI enable + select the `image` option, but the
+            // renderer would reject the bytes and mount nothing —
+            // leaving the user with a non-functional selection and a
+            // blank backdrop they couldn't diagnose.
+            const trimmedCustomImageDataUrl = (typeof customImageDataUrl === 'string')
+                ? customImageDataUrl.trim() : '';
+            const hasAsset = /^data:image\/(jpeg|png|webp);/i.test(trimmedCustomImageDataUrl);
+            refreshImageOptionState(hasAsset, customImageName);
+
+            // Same shape for video: validate the persisted filename
+            // against the renderer-side pattern so a stale/manually-
+            // edited localStorage value (e.g. left over from a future
+            // schema change) doesn't enable a non-functional option.
+            // Lowercase normalization: routes.py only produces lowercase
+            // names, so a manually-edited `current.MP4` would otherwise
+            // pass an i-flag check and then 404 against the server.
+            const trimmedCustomVideoName = (typeof customVideoName === 'string')
+                ? customVideoName.trim().toLowerCase() : '';
+            const hasVideo = VIDEO_FILENAME_RE.test(trimmedCustomVideoName);
+            refreshVideoOptionState(hasVideo, trimmedCustomVideoName);
+
+            // Apply style AFTER both option disabled-states are settled.
+            // If style === 'image'/'video' but no asset is uploaded
+            // (corrupt localStorage, manual edit), persist the fallback
+            // through the setter so storage / UI / renderer all agree
+            // — without the setter call we'd leave the bad style in
+            // localStorage while the picker shows particles, and the
+            // renderer would mount the inert style (build returns null)
+            // for a blank backdrop that doesn't match the visible UI.
+            //
+            // NOTE: settings.html normally runs BEFORE screen.js loads
+            // (app.js injects settings first, then appends the plugin
+            // script), so window.h3dBgSetStyle is usually undefined at
+            // this point. Write the corrected value directly to
+            // localStorage so that when screen.js does load it reads the
+            // already-fixed value rather than the stale 'video'/'image'.
+            if (sel) {
+                if ((style === 'image' && !hasAsset) || (style === 'video' && !hasVideo)) {
+                    sel.value = DEFAULTS.style;
+                    try { localStorage.setItem('h3d_bg_style', DEFAULTS.style); } catch (_) { /* storage blocked */ }
+                    if (window.h3dBgSetStyle) window.h3dBgSetStyle(DEFAULTS.style);
+                } else {
+                    sel.value = style;
+                }
+            }
+
+            if (fileInput) {
+                fileInput.addEventListener('change', function () {
+                    clearError();
+                    const file = fileInput.files && fileInput.files[0];
+                    if (!file) return;
+                    if (file.size > MAX_IMAGE_BYTES) {
+                        showError('Image must be ≤1.5 MB (got ' + (file.size / 1024 / 1024).toFixed(1) + ' MB).');
+                        fileInput.value = '';
+                        return;
+                    }
+                    // Strict MIME whitelist matching the picker's
+                    // accept attribute and the renderer-side validator
+                    // in screen.js. Rejecting SVG/GIF/etc. here keeps
+                    // the UI, the persisted bytes, and what the
+                    // texture loader will accept all in agreement —
+                    // and avoids any SVG-via-img surface area we
+                    // don't need for a backdrop image.
+                    // file.type can be empty on some OS/browser MIME
+                    // tables (older Windows shells, some Linux desktops)
+                    // even for valid .jpg / .png / .webp. Mirror the
+                    // video section's extension fallback so a working
+                    // browser isn't rejected on either side.
+                    const extOk = /\.(jpe?g|png|webp)$/i.test(file.name || '');
+                    const typeIsKnown = file.type && file.type !== 'application/octet-stream';
+                    const typeOk = typeIsKnown ? ALLOWED_IMAGE_MIMES.has(file.type) : extOk;
+                    if (!typeOk) {
+                        showError('File must be a JPG, PNG, or WebP image.');
+                        fileInput.value = '';
+                        return;
+                    }
+                    const reader = new FileReader();
+                    reader.onerror = function () {
+                        showError('Could not read file.');
+                        fileInput.value = '';
+                    };
+                    reader.onload = function () {
+                        const dataUrl = reader.result;
+                        if (typeof dataUrl !== 'string') {
+                            showError('Unexpected file content.');
+                            fileInput.value = '';
+                            return;
+                        }
+                        if (dataUrl.length > MAX_DATA_URL_CHARS) {
+                            // Pre-decode reject when the encoded form
+                            // is plainly too large for storage. Avoids
+                            // a confusing "applied but won't persist"
+                            // message when the image is so large that
+                            // localStorage could never have held it.
+                            showError('Image is too large after encoding to save. Try a smaller file.');
+                            fileInput.value = '';
+                            return;
+                        }
+                        // Probe the bytes by attempting to decode them.
+                        // Catches mis-typed files (e.g. .txt renamed to
+                        // .png) and corrupt uploads BEFORE we persist
+                        // them, so the user gets a clear error instead
+                        // of a silent broken backdrop.
+                        const probe = new Image();
+                        probe.onload = function () {
+                            // Decompression-bomb guard. Decoded
+                            // dimensions are only known here, after
+                            // probe.onload — small files can hide
+                            // enormous pixel counts. Reject before
+                            // persisting OR triggering the renderer
+                            // load, so we never get past the data URL
+                            // sitting in localStorage to the GPU
+                            // texture upload that would crash the tab.
+                            const w = probe.naturalWidth  || 0;
+                            const h = probe.naturalHeight || 0;
+                            if (w > MAX_IMAGE_DIM || h > MAX_IMAGE_DIM || (w * h) > MAX_IMAGE_PIXELS) {
+                                showError('Image dimensions are too large (' + w + '×' + h + '). Max ' + MAX_IMAGE_DIM + '×' + MAX_IMAGE_DIM + '.');
+                                fileInput.value = '';
+                                return;
+                            }
+                            if (window.h3dBgSetCustomImage) {
+                                window.h3dBgSetCustomImage({ dataUrl: dataUrl, name: file.name });
+                            }
+                            // The setter swallows localStorage write
+                            // failures (sets in-memory fallback so the
+                            // current session still works) — re-read
+                            // and verify to surface a real "won't
+                            // persist" warning when the bytes didn't
+                            // make it to disk. The image is still
+                            // applied for this session in either case,
+                            // so we always refresh the UI.
+                            refreshImageOptionState(true, file.name);
+                            fileInput.value = '';
+                            let persisted = false;
+                            try { persisted = localStorage.getItem('h3d_bg_customImageDataUrl') === dataUrl; } catch (_) { /* storage blocked */ }
+                            if (!persisted) {
+                                showError('Image applied for this session, but could not be saved (storage may be full or blocked). It will be lost on refresh.');
+                            }
+                        };
+                        probe.onerror = function () {
+                            showError('Image could not be decoded. Try a different file.');
+                            fileInput.value = '';
+                        };
+                        probe.src = dataUrl;
+                    };
+                    reader.readAsDataURL(file);
+                });
+            }
+            if (clearBtn) {
+                clearBtn.addEventListener('click', function () {
+                    clearError();
+                    if (window.h3dBgClearCustomImage) window.h3dBgClearCustomImage();
+                    refreshImageOptionState(false, '');
+                    if (fileInput) fileInput.value = '';
+                    // If the picker was on `image`, fall back to a
+                    // procedural style so the user isn't left with the
+                    // (now-disabled) option selected.
+                    if (sel && sel.value === 'image') {
+                        sel.value = DEFAULTS.style;
+                        if (window.h3dBgSetStyle) window.h3dBgSetStyle(DEFAULTS.style);
+                    }
+                });
+            }
+
+            if (videoFileInput) {
+                videoFileInput.addEventListener('change', function () {
+                    clearVideoError();
+                    const file = videoFileInput.files && videoFileInput.files[0];
+                    if (!file) return;
+                    if (file.size > MAX_VIDEO_BYTES) {
+                        showVideoError('Video must be ≤50 MB (got ' + (file.size / 1024 / 1024).toFixed(1) + ' MB).');
+                        videoFileInput.value = '';
+                        return;
+                    }
+                    // file.type is empty or `application/octet-stream`
+                    // in some browsers / OSes (older Windows shells,
+                    // some Linux MIME tables) even for valid .mp4 /
+                    // .webm. Fall back to the extension when the
+                    // type isn't reported or is the generic
+                    // octet-stream — matches the server-side fallback
+                    // in routes.py so a working browser doesn't get
+                    // rejected on either side.
+                    const extOk = /\.(mp4|webm)$/i.test(file.name || '');
+                    const typeIsKnown = file.type && file.type !== 'application/octet-stream';
+                    const typeOk = typeIsKnown
+                        ? ALLOWED_VIDEO_MIMES.has(file.type)
+                        : extOk;
+                    if (!typeOk) {
+                        showVideoError('File must be an MP4 or WebM video.');
+                        videoFileInput.value = '';
+                        return;
+                    }
+                    // POST to the plugin's upload route. routes.py
+                    // streams the body with a server-side size guard
+                    // and writes to disk under a deterministic
+                    // single-slot filename (current.<ext>) — each
+                    // upload replaces the previous file.
+                    const fd = new FormData();
+                    fd.append('file', file);
+                    fetch(VIDEO_UPLOAD_URL, { method: 'POST', body: fd })
+                        .then(function (resp) {
+                            if (!resp.ok) {
+                                return resp.text().then(function (txt) {
+                                    // FastAPI error bodies are JSON
+                                    // like {"detail": ...}. detail can
+                                    // be:
+                                    //  - string: "Only MP4 and WebM…"
+                                    //  - array of objects (422
+                                    //    validation errors): each
+                                    //    item has msg / loc / type
+                                    //  - plain object
+                                    // Stringify each shape into
+                                    // something readable so the error
+                                    // banner doesn't surface
+                                    // "[object Object]".
+                                    let msg = '';
+                                    try {
+                                        const detail = JSON.parse(txt).detail;
+                                        if (typeof detail === 'string') {
+                                            msg = detail;
+                                        } else if (Array.isArray(detail)) {
+                                            msg = detail
+                                                .map(function (d) { return (d && d.msg) || JSON.stringify(d); })
+                                                .join('; ');
+                                        } else if (detail && typeof detail === 'object') {
+                                            msg = JSON.stringify(detail);
+                                        }
+                                        if (!msg) msg = txt;
+                                    } catch (_) {
+                                        msg = txt || ('HTTP ' + resp.status);
+                                    }
+                                    throw new Error(msg);
+                                });
+                            }
+                            return resp.json();
+                        })
+                        .then(function (data) {
+                            // Lowercase the server response too — routes.py
+                            // produces lowercase, but defending against a
+                            // future server change or proxy munging the
+                            // case is cheap and keeps the contract crisp.
+                            const name = String((data && data.name) || '').toLowerCase();
+                            if (!VIDEO_FILENAME_RE.test(name)) {
+                                throw new Error('Server returned an unexpected filename.');
+                            }
+                            if (window.h3dBgSetCustomVideo) {
+                                window.h3dBgSetCustomVideo({ name: name });
+                            }
+                            refreshVideoOptionState(true, name);
+                            videoFileInput.value = '';
+                            // _bgWriteGlobal intentionally swallows
+                            // localStorage.setItem failures (full quota,
+                            // blocked storage in private mode) and falls
+                            // back to the in-memory _bgMemFallback, so
+                            // setCustomVideo never throws even when
+                            // persistence failed. Re-read to verify;
+                            // surface a session-only warning that
+                            // matches what the image flow does. The
+                            // video itself works for this session
+                            // because the renderer reads from the
+                            // mem-fallback ahead of localStorage.
+                            let persisted = false;
+                            try { persisted = localStorage.getItem('h3d_bg_customVideoName') === name; } catch (_) { /* storage blocked */ }
+                            if (!persisted) {
+                                showVideoError('Video applied for this session, but the filename pointer could not be saved (storage may be full or blocked). It will be lost on refresh.');
+                            }
+                        })
+                        .catch(function (err) {
+                            showVideoError('Upload failed: ' + (err && err.message ? err.message : err));
+                            videoFileInput.value = '';
+                        });
+                });
+            }
+
+            if (videoClearBtn) {
+                videoClearBtn.addEventListener('click', function () {
+                    clearVideoError();
+                    // Slot-level clear: DELETE on the upload endpoint
+                    // (no filename in the path) removes every
+                    // current.* the upload dir holds. This matches
+                    // the slot's design intent — the dir is a single
+                    // logical asset slot, not a list of named files,
+                    // so clear should empty it regardless of which
+                    // extension currently lives there.
+                    fetch(VIDEO_UPLOAD_URL, { method: 'DELETE' })
+                        .then(function (resp) {
+                            // Defense: surface non-2xx errors so a
+                            // future server change to the contract
+                            // (auth, rate limit, etc.) doesn't go
+                            // unnoticed. Today's routes.py is
+                            // best-effort and always 200.
+                            if (!resp.ok) {
+                                throw new Error('HTTP ' + resp.status);
+                            }
+                            return resp.json().catch(function () { return {}; });
+                        })
+                        .then(function (data) {
+                            // Soft warning when the server kept any
+                            // file (Windows file lock, antivirus, an
+                            // in-flight GET) — the next upload's
+                            // pre-cleanup will retry, but flag it so
+                            // the user knows operator-side cleanup
+                            // may be needed.
+                            const leftover = (data && data.leftover) || [];
+                            if (leftover.length > 0) {
+                                showVideoError('Settings cleared, but server could not remove: ' +
+                                    leftover.map(function (l) { return l.name; }).join(', '));
+                            }
+                            // Clear local state only on confirmed server
+                            // success. On failure we preserve the localStorage
+                            // key so the renderer doesn't lose the reference to
+                            // a file that still exists on disk and the user can
+                            // retry the clear later.
+                            if (window.h3dBgClearCustomVideo) window.h3dBgClearCustomVideo();
+                            refreshVideoOptionState(false, '');
+                            if (videoFileInput) videoFileInput.value = '';
+                            if (sel && sel.value === 'video') {
+                                sel.value = DEFAULTS.style;
+                                if (window.h3dBgSetStyle) window.h3dBgSetStyle(DEFAULTS.style);
+                            }
+                        })
+                        .catch(function (err) {
+                            // Network failure or non-2xx. Do NOT clear the
+                            // localStorage key — the file still exists on the
+                            // server and removing the pointer would strand it,
+                            // disabling the Custom video option until the user
+                            // re-uploads. Surface the error so the user knows
+                            // to retry.
+                            showVideoError('Server clear failed (' +
+                                (err && err.message ? err.message : err) +
+                                '). Video settings unchanged — try again.');
+                        });
+                });
+            }
+        })();
+    </script>
+</div>

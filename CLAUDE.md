@@ -181,7 +181,7 @@ Selecting this plugin in the main-player viz picker — or in splitscreen's per-
   - But if the default renderer already owns the canvas (the usual case — user picks WebGL from the dropdown mid-session), switching to WebGL on that same canvas fails. The reverse fails too: a canvas that started with a WebGL renderer can't switch back to the default 2D.
   Supporting arbitrary swaps between 2D and WebGL therefore requires recreating or replacing the canvas element when the context type changes — out of scope for Wave A, but the restore-at-load path is a viable escape hatch for WebGL viz authors today.
 - `draw(bundle)` receives difficulty-filtered arrays — never read from `_filteredNotes` or other internals.
-- `_drawHooks` fire only for the default 2D renderer. Custom renderers handling their own compositing should not expect them.
+- `_drawHooks` fire for the default 2D renderer (the factory calls them at the end of each frame). Custom WebGL renderers that maintain a 2D overlay canvas (like the bundled 3D highway) also call `window.highway.fireDrawHooks(ctx, W, H)` on that overlay so overlay plugins continue to work regardless of which renderer is active. Custom renderers without a 2D overlay context should not attempt to fire hooks.
 
 **Auto mode — `matchesArrangement(songInfo)` (optional).**
 
@@ -218,7 +218,7 @@ Plugins that add a layer on top of whichever visualization is active — HUDs, f
 Overlays do NOT appear in the viz picker and do NOT declare `"type": "visualization"` in `plugin.json`. They coexist with whichever renderer (default 2D, 3D highway, piano, ...) the user has picked.
 
 **Key rules:**
-- **Own your rAF + canvas** — don't piggyback on `_drawHooks` (those only fire for the default 2D renderer) or on `createHighway`'s rendering context.
+- **Own your rAF + canvas** — don't piggyback on `_drawHooks` or on `createHighway`'s rendering context. Draw hooks fire for the default 2D renderer and for custom renderers that explicitly call `window.highway.fireDrawHooks(ctx, W, H)` (e.g. the bundled 3D highway fires them on its 2D overlay canvas), but not for every custom renderer.
 - **Re-read state every frame** — overlay output must track whatever the current renderer is drawing. Don't cache note positions across frames.
 - **Respect lefty + invert toggles** — if the overlay depicts strings or frets, mirror using the same transforms the active renderer would.
 - **Clean up on toggle-off** — cancel rAF and remove/hide the overlay canvas so inactive overlays aren't wasting frames.

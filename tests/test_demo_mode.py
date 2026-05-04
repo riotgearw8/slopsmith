@@ -85,6 +85,8 @@ def test_demo_off_settings_post_not_blocked(tmp_path, monkeypatch):
     ("POST",   "/api/loops"),
     ("DELETE", "/api/loops/some-id"),
     ("GET",    "/api/plugins/updates"),
+    ("POST",   "/api/plugins/highway_3d/files"),
+    ("DELETE", "/api/plugins/highway_3d/files"),
 ])
 def test_demo_on_blocked_routes_return_403(tmp_path, monkeypatch, method, path):
     server, client = _make_client(tmp_path, monkeypatch, demo=True)

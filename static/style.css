@@ -25,6 +25,15 @@ html { scroll-behavior: smooth; }
 }
 #highway { flex: 1; width: 100%; min-height: 0; }
 
+/* Player controls need their own stacking context so visualization
+   plugins that paint absolutely-positioned overlays (e.g. the bundled
+   3D Highway's WebGL wrap at z-index:2, or any community viz plugin)
+   don't paint over the picker / mixer / lyrics toggle. Without this,
+   the bottom controls bar would silently sit underneath the canvas
+   and become click-through invisible.
+   Folds in the fix from byrongamatos/slopsmith#99. */
+#player-controls { position: relative; z-index: 10; }
+
 /* Song cards */
 .song-card {
     background: linear-gradient(145deg, #10101e 0%, #0d0d18 100%);

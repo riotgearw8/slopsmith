@@ -169,6 +169,9 @@ _DEMO_BLOCKED: list[tuple[str, re.Pattern]] = [
     ("POST",   re.compile(r"^/api/diagnostics/export$")),
     ("GET",    re.compile(r"^/api/diagnostics/preview$")),
     ("GET",    re.compile(r"^/api/diagnostics/hardware$")),
+    # Bundled core plugin — video background upload/delete
+    ("POST",   re.compile(r"^/api/plugins/highway_3d/files$")),
+    ("DELETE", re.compile(r"^/api/plugins/highway_3d/files$")),
 ]
 
 

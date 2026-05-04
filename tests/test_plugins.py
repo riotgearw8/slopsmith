@@ -836,6 +836,65 @@ def test_per_plugin_context_does_not_leak_load_sibling_across_plugins(tmp_path, 
     assert fake_app.state.zzz_origin == "zzz"
 
 
+# ── SLOPSMITH_PLUGINS_DIR precedence over bundled in-tree plugins ────────────
+
+def test_slopsmith_plugins_dir_takes_precedence_over_bundled(
+    tmp_path, reset_plugin_state, monkeypatch, caplog
+):
+    """SLOPSMITH_PLUGINS_DIR is scanned before the in-tree PLUGINS_DIR, so a
+    user-installed plugin with the same id shadows the bundled copy.
+
+    This is the mechanism that keeps existing standalone highway_3d installs
+    working unchanged after the plugin was bundled into core (PR 1 of 4,
+    slopsmith#160). A regression here would silently break their setup.
+    """
+    plugins = reset_plugin_state
+
+    # Simulate the in-tree (bundled) plugins directory.
+    bundled_dir = tmp_path / "bundled"
+    bundled_dir.mkdir()
+    _make_plugin(
+        bundled_dir, "highway_3d",
+        routes_body=(
+            "def setup(app, ctx):\n"
+            "    app.state.origin = 'bundled'\n"
+        ),
+    )
+
+    # Simulate a user-installed plugins directory (SLOPSMITH_PLUGINS_DIR).
+    user_dir = tmp_path / "user"
+    user_dir.mkdir()
+    _make_plugin(
+        user_dir, "highway_3d",
+        routes_body=(
+            "def setup(app, ctx):\n"
+            "    app.state.origin = 'user'\n"
+        ),
+    )
+
+    monkeypatch.setenv("SLOPSMITH_PLUGINS_DIR", str(user_dir))
+
+    fake_app = type("FakeApp", (), {})()
+    fake_app.state = type("State", (), {})()
+
+    # Use bundled_dir as the in-tree PLUGINS_DIR root.
+    saved_dir = plugins.PLUGINS_DIR
+    plugins.PLUGINS_DIR = bundled_dir
+    try:
+        with capture_logger(caplog, "slopsmith.plugins"):
+            plugins.load_plugins(fake_app, {})
+    finally:
+        plugins.PLUGINS_DIR = saved_dir
+
+    # User copy must win — setup() from user_dir ran, not bundled_dir.
+    assert fake_app.state.origin == "user"
+    # Exactly one highway_3d entry registered.
+    hw3d_entries = [p for p in plugins.LOADED_PLUGINS if p["id"] == "highway_3d"]
+    assert len(hw3d_entries) == 1
+    # The loader emitted a duplicate-skip warning for the bundled copy.
+    assert "Skipping duplicate plugin 'highway_3d'" in caplog.text
+
+
 # ── progress_cb tests ─────────────────────────────────────────────────────────
 
 def _run_load_plugins_with_cb(plugins, app, tmp_path, progress_cb, context=None):

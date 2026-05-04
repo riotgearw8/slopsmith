@@ -1,0 +1,7 @@
+# Keep the minified Three.js bundle byte-identical across platforms.
+# Without this, autocrlf=true would rewrite the bundle's newlines on
+# Windows checkouts and the SHA-256 wouldn't match the upstream tag —
+# making the "pinned r170" claim in static/vendor/three/VERSION
+# dishonest. Scoped narrowly to the bundle (not the whole vendor dir)
+# so LICENSE / VERSION stay diff-readable for future version bumps.
+static/vendor/three/three.module.min.js binary
