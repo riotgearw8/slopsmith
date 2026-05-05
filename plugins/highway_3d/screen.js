@@ -18,6 +18,7 @@
     // same origin to avoid the first-launch CDN round-trip and to pin the
     // version against breakages from upstream Three.js drift.
     const THREE_URL = '/static/vendor/three/three.module.min.js';
+    const THREE_CDN = 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js';
 
     // Selectable per-string color palettes (issue #10). Each palette has
     // 8 entries to match MAX_RENDER_STRINGS so 6/7/8-string arrangements
@@ -231,11 +232,13 @@
         if (!threeLoadPromise) {
             threeLoadPromise = import(THREE_URL)
                 .then(mod => { T = mod; return mod; })
-                .catch(e => {
-                    console.error('[3D-Hwy] Three.js load failed:', e);
-                    threeLoadPromise = null;
-                    throw e;
-                });
+                .catch(() => import(THREE_CDN)
+                    .then(mod => { T = mod; return mod; })
+                    .catch(e => {
+                        console.error('[3D-Hwy] Three.js load failed:', e);
+                        threeLoadPromise = null;
+                        throw e;
+                    }));
         }
         return threeLoadPromise;
     }
@@ -2865,9 +2868,9 @@
                 mat.depthWrite = false;
                 mat.opacity = 0.55;
                 const lbl = new T.Sprite(mat);
-                const scale = 3.8 * (0.5 + textSize);
+                const scale = 5.5 * (0.5 + textSize);
                 lbl.scale.set(scale * K, scale * K, 1);
-                lbl.position.set(fretMid(f), my, -K);
+                lbl.position.set(fretMid(f), yTop - S_GAP * 0.4, -K);
                 fretG.add(lbl);
                 _inlayLabels.push(lbl);
                 _inlayMats.push(mat);
@@ -2908,7 +2911,7 @@
             // buildBoard() sets an initial scale using (0.5 + textSize) but
             // _textSizeMul is only authoritative from here onward.
             for (const lbl of _inlayLabels) {
-                const s = 3.8 * _textSizeMul * K;
+                const s = 5.5 * _textSizeMul * K;
                 lbl.scale.set(s, s, 1);
             }
             pNote.reset(); pSus.reset(); pSusOutline.reset(); pTechArrow.reset(); pTapChevron.reset(); pLbl.reset();
