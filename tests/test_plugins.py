@@ -2732,3 +2732,53 @@ def test_tour_json_rejects_null_file_key(tmp_path, reset_plugin_state):
         assert r.headers["content-type"].startswith("application/json")
     finally:
         client.close()
+
+
+def test_install_requirements_marker_is_stable_across_calls(tmp_path, reset_plugin_state, monkeypatch):
+    """The install marker must be deterministic so plugins don't reinstall
+    every boot. Regression for a bug where ``hash(req_file.read_text())``
+    returned a different integer per process (PYTHONHASHSEED randomisation),
+    so ``_install_requirements`` re-ran pip on every restart.
+    """
+    import hashlib
+    import subprocess as _sp
+
+    plugins = reset_plugin_state
+
+    plugin_dir = tmp_path / "myplugin"
+    plugin_dir.mkdir()
+    req_file = plugin_dir / "requirements.txt"
+    req_file.write_text("librosa>=0.10.1\nnumpy>=1.24\n")
+
+    pip_target = tmp_path / "pip_packages"
+    monkeypatch.setattr(plugins, "_PIP_TARGET", pip_target)
+
+    pip_calls: list = []
+
+    def fake_run(cmd, **kwargs):
+        pip_calls.append(cmd)
+        return _sp.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(plugins.subprocess, "run", fake_run)
+
+    # First call — pip runs once and writes the marker.
+    assert plugins._install_requirements(plugin_dir, "myplugin") is True
+    assert len(pip_calls) == 1, "first call must invoke pip"
+    marker = pip_target / ".installed_myplugin"
+    assert marker.exists(), "marker must be written after successful install"
+    first_marker_contents = marker.read_text().strip()
+
+    # Second call in the same process — must skip pip.
+    assert plugins._install_requirements(plugin_dir, "myplugin") is True
+    assert len(pip_calls) == 1, "second in-process call must not re-invoke pip"
+
+    # The crucial regression check: the marker must be derivable purely
+    # from the requirements.txt bytes — no process-local state. If a
+    # future change reintroduces ``hash()`` (or any other randomised
+    # digest) the freshly-computed expected value below differs from
+    # what was written, and the marker would never match on restart.
+    expected = hashlib.sha256(req_file.read_bytes()).hexdigest()
+    assert first_marker_contents == expected, (
+        "marker must contain a deterministic digest of requirements.txt; "
+        f"got {first_marker_contents!r}, expected {expected!r}"
+    )

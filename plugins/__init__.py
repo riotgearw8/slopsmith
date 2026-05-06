@@ -1,5 +1,6 @@
 """Plugin discovery and loading system."""
 
+import hashlib
 import importlib.util
 import json
 import logging
@@ -440,9 +441,12 @@ def _install_requirements(plugin_dir: Path, plugin_id: str):
     if pip_target not in sys.path:
         sys.path.insert(0, pip_target)
 
-    # Check if already installed (marker file)
+    # Check if already installed (marker file). Use a deterministic
+    # digest — Python's built-in hash() is randomised per process
+    # (PYTHONHASHSEED), so the marker would never match on restart and
+    # pip would re-resolve every plugin's requirements on every boot.
     marker = _PIP_TARGET / f".installed_{plugin_id}"
-    req_hash = str(hash(req_file.read_text()))
+    req_hash = hashlib.sha256(req_file.read_bytes()).hexdigest()
     if marker.exists() and marker.read_text().strip() == req_hash:
         return True  # Already installed, same requirements
 
