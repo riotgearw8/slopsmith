@@ -839,7 +839,7 @@ def _extract_meta_for_file(psarc_path: Path) -> dict:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-_SCAN_STATUS_INIT = {"running": False, "stage": "idle", "total": 0, "done": 0, "current": "", "error": None}
+_SCAN_STATUS_INIT = {"running": False, "stage": "idle", "total": 0, "done": 0, "current": "", "error": None, "is_first_scan": False}
 _scan_status = dict(_SCAN_STATUS_INIT)
 
 _STARTUP_STATUS_INIT = {
@@ -988,7 +988,11 @@ def _background_scan():
         log.info("Scan: nothing new to scan (%d songs, all cached)", len(all_songs))
         return
 
-    _scan_status = {**_SCAN_STATUS_INIT, "running": True, "stage": "scanning", "total": len(to_scan)}
+    # Refine: all discovered songs need scanning → treat as first-time import
+    # (covers moved DLC folder / fully-stale DB as well as a genuinely empty DB).
+    is_first_scan = bool(all_songs) and len(to_scan) == len(all_songs)
+    _scan_status = {**_SCAN_STATUS_INIT, "running": True, "stage": "scanning", "total": len(to_scan),
+                    "is_first_scan": is_first_scan}
     log.info("Library: %d PSARCs + %d sloppaks, %d cached, %d to scan", len(psarcs), len(sloppaks), len(all_songs) - len(to_scan), len(to_scan))
 
     def _scan_one(item):

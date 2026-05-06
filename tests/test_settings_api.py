@@ -478,3 +478,57 @@ def test_scan_platform_mac_excludes_pc_files(tmp_path, scan_module):
     all_keys = {r[0] for r in scan_module.meta_db.conn.execute("SELECT filename FROM songs").fetchall()}
     assert "song_m.psarc" in all_keys
     assert "song_p.psarc" not in all_keys
+
+
+# ── is_first_scan flag ───────────────────────────────────────────────────────
+
+def test_is_first_scan_true_when_all_songs_unscanned(tmp_path, scan_module):
+    """is_first_scan is True when every discovered song needs scanning."""
+    dlc = tmp_path / "dlc"
+    dlc.mkdir()
+    _make_psarcs(dlc, ["song_a.psarc", "song_b.psarc"])
+    (tmp_path / "config.json").write_text(json.dumps({"dlc_dir": str(dlc)}))
+
+    captured_status = {}
+
+    import unittest.mock as mock
+
+    def mock_extract(f):
+        # Capture the scan status on the first call (during the scanning phase)
+        if not captured_status:
+            captured_status.update(scan_module._scan_status)
+        return {"title": f.name, "artist": "", "album": ""}
+
+    with mock.patch.object(scan_module, "_extract_meta_for_file", new=mock_extract):
+        scan_module._background_scan()
+
+    assert captured_status.get("is_first_scan") is True
+
+
+def test_is_first_scan_false_when_some_songs_cached(tmp_path, scan_module):
+    """is_first_scan is False when only a subset of discovered songs need scanning."""
+    dlc = tmp_path / "dlc"
+    dlc.mkdir()
+    files = _make_psarcs(dlc, ["song_a.psarc", "song_b.psarc"])
+    (tmp_path / "config.json").write_text(json.dumps({"dlc_dir": str(dlc)}))
+
+    # Pre-populate the DB with song_a so only song_b needs scanning.
+    stat_a = files[0].stat()
+    scan_module.meta_db.put(
+        "song_a.psarc", stat_a.st_mtime, stat_a.st_size,
+        {"title": "Song A", "artist": "", "album": ""},
+    )
+
+    captured_status = {}
+
+    import unittest.mock as mock
+
+    def mock_extract(f):
+        if not captured_status:
+            captured_status.update(scan_module._scan_status)
+        return {"title": f.name, "artist": "", "album": ""}
+
+    with mock.patch.object(scan_module, "_extract_meta_for_file", new=mock_extract):
+        scan_module._background_scan()
+
+    assert captured_status.get("is_first_scan") is False

@@ -3684,6 +3684,7 @@ function showScanBanner() {
             </div>
             <div class="progress-bar"><div class="fill" id="scan-bar" style="width:0%"></div></div>
             <p class="text-xs text-gray-500 mt-1 truncate" id="scan-file">Starting...</p>
+            <p class="text-xs text-blue-400/70 mt-1 hidden" id="scan-first-note">First-time import — results are cached for future launches</p>
         </div>
         <button onclick="hideScanBanner()" class="px-3 py-1.5 bg-dark-600 hover:bg-dark-500 rounded-lg text-xs text-gray-400 transition flex-shrink-0">Dismiss</button>`;
     document.body.appendChild(el);
@@ -3705,8 +3706,10 @@ async function pollScanStatus() {
             showScanBanner();
             const file = document.getElementById('scan-file');
             const prog = document.getElementById('scan-progress');
+            const firstNote = document.getElementById('scan-first-note');
             if (file) { file.textContent = 'Scan failed: ' + data.error; file.classList.add('text-red-400'); }
             if (prog) prog.textContent = 'Error';
+            if (firstNote) firstNote.classList.add('hidden');
             clearInterval(_scanPollId);
             _scanPollId = null;
             return;
@@ -3717,12 +3720,14 @@ async function pollScanStatus() {
             const bar = document.getElementById('scan-bar');
             const prog = document.getElementById('scan-progress');
             const file = document.getElementById('scan-file');
+            const firstNote = document.getElementById('scan-first-note');
             if (bar) bar.style.width = pct + '%';
             if (prog) prog.textContent = `${data.done} / ${data.total} (${pct}%)`;
             if (file) {
                 const name = (data.current || '').replace(/_p\.psarc$/i, '').replace(/_/g, ' ');
                 file.textContent = name || (data.stage === 'listing' ? 'Listing DLC folder...' : 'Processing...');
             }
+            if (firstNote) firstNote.classList.toggle('hidden', !data.is_first_scan);
         } else {
             if (document.getElementById('scan-banner')) {
                 hideScanBanner();
@@ -3740,6 +3745,8 @@ async function checkScanAndLoad() {
     const data = await resp.json();
     if (data.running) {
         showScanBanner();
+        const firstNote = document.getElementById('scan-first-note');
+        if (firstNote) firstNote.classList.toggle('hidden', !data.is_first_scan);
         _scanPollId = setInterval(pollScanStatus, 1000);
     }
     loadLibrary();
