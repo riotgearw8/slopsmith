@@ -2536,8 +2536,8 @@ window.slopsmith = Object.assign(new EventTarget(), {
     emit(event, detail) {
         this.dispatchEvent(new CustomEvent(event, { detail }));
     },
-    on(event, fn) { this.addEventListener(event, fn); },
-    off(event, fn) { this.removeEventListener(event, fn); }
+    on(event, fn, options) { this.addEventListener(event, fn, options); },
+    off(event, fn, options) { this.removeEventListener(event, fn, options); }
 });
 if (_slopsmithExisting) {
     for (const key of Object.keys(_slopsmithExisting)) {
@@ -2795,6 +2795,12 @@ if (window.slopsmith) {
     window.slopsmith.on('viz:reverted', (e) => {
         const sel = document.getElementById('viz-picker');
         if (sel) sel.value = 'default';
+        // Cancel any pending viz:renderer:ready label listener — the renderer
+        // that was queued never became (or stayed) active.
+        if (_cancelPendingAutoLabel) { _cancelPendingAutoLabel(); _cancelPendingAutoLabel = null; }
+        // Clear any Auto-resolved label — the renderer that was advertised
+        // never became (or stayed) active.
+        _setAutoVizLabel(null);
         try { localStorage.setItem('vizSelection', 'default'); } catch (_) {}
         console.warn(
             `viz picker: reverted to default renderer (${e.detail?.reason || 'unknown'}).`
@@ -3094,6 +3100,15 @@ function setViz(id) {
         highway.setRenderer(null);
     };
 
+    // When switching away from Auto, reset the closed-state label so the
+    // Auto option shows base text the next time the user opens the dropdown.
+    // Also cancel any pending viz:renderer:ready listener from the previous
+    // Auto match cycle so it can't set a stale label after we've moved on.
+    if (id !== 'auto') {
+        if (_cancelPendingAutoLabel) { _cancelPendingAutoLabel(); _cancelPendingAutoLabel = null; }
+        _setAutoVizLabel(null);
+    }
+
     if (id === 'default' || !id) {
         try { localStorage.setItem('vizSelection', id || 'default'); } catch (_) {}
         const _sel = document.getElementById('viz-picker');
@@ -3155,11 +3170,39 @@ function setViz(id) {
 // Enumerates viz plugins by walking the picker's own <option> list —
 // that's the canonical set built by _populateVizPicker above and keeps
 // us from needing a second module-level registry.
+// Helper: update the closed-state label of the Auto option to show what was resolved.
+// Resets to the base label when called with no argument (at evaluation start).
+// _autoVizBaseLabel is captured from the DOM on first call so the reset text
+// always matches the initial markup rather than a hardcoded duplicate.
+let _autoVizBaseLabel = null;
+function _setAutoVizLabel(resolvedText) {
+    const opt = document.querySelector('#viz-picker option[value="auto"]');
+    if (!opt) return;
+    if (_autoVizBaseLabel === null) _autoVizBaseLabel = opt.text;
+    opt.text = resolvedText != null ? `Auto \u2192 ${resolvedText}` : _autoVizBaseLabel;
+}
+
+// Holds a cleanup function for the pending viz:renderer:ready listener
+// registered by _autoMatchViz(). Called at the start of each new evaluation
+// to remove any listener left over from the previous match cycle.
+let _cancelPendingAutoLabel = null;
+
 function _autoMatchViz() {
     const sel = document.getElementById('viz-picker');
     if (!sel) return;
+    // Cancel any pending viz:renderer:ready listener from a previous match
+    // cycle. The song may change before the previous renderer's async init
+    // settles; we don't want that stale listener to clobber the new label.
+    if (_cancelPendingAutoLabel) { _cancelPendingAutoLabel(); _cancelPendingAutoLabel = null; }
+    // Reset label at evaluation start so a stale resolved label never persists
+    // if the song changes or the picker re-evaluates with a different outcome.
+    _setAutoVizLabel(null);
     const songInfo = (typeof highway !== 'undefined' && typeof highway.getSongInfo === 'function')
         ? (highway.getSongInfo() || {}) : {};
+    // Only update the label when a real song is loaded. Before the first
+    // song_info frame, getSongInfo() returns {} — leaving the reset state
+    // ("Auto (match arrangement)") is correct; we haven't evaluated yet.
+    const hasSong = Object.keys(songInfo).length > 0;
     // Options are stable in DOM order, which matches what users see in
     // the picker. The underlying order comes from /api/plugins →
     // _populateVizPicker, and /api/plugins reflects the order the
@@ -3207,6 +3250,20 @@ function _autoMatchViz() {
         }
         // Deliberately NOT persisting id — vizSelection stays 'auto' so
         // the next song:ready re-evaluates against the new arrangement.
+        //
+        // Register the viz:renderer:ready listener BEFORE setRenderer() so we
+        // don't miss the event for sync renderers (no readyPromise), which emit
+        // it immediately inside setRenderer(). The _onReady guard still checks
+        // sel.value so a sync init failure (viz:reverted → sel.value='default')
+        // that fires during setRenderer() is handled correctly — the listener
+        // fires but finds sel.value !== 'auto' and skips the label update.
+        if (hasSong) {
+            const matchedOpt = Array.from(sel.options).find(o => o.value === id);
+            const labelText = matchedOpt ? matchedOpt.text : id;
+            function _onReady() { if (sel.value === 'auto') _setAutoVizLabel(labelText); }
+            window.slopsmith.on('viz:renderer:ready', _onReady, { once: true });
+            _cancelPendingAutoLabel = () => window.slopsmith.off('viz:renderer:ready', _onReady);
+        }
         highway.setRenderer(renderer);
         return;
     }
@@ -3219,6 +3276,18 @@ function _autoMatchViz() {
     // already have — a future wave will teach highway to recreate the
     // canvas on context-type change.
     highway.setRenderer(null);
+    // The built-in 2D renderer is synchronous and always succeeds when the
+    // canvas isn't locked to an incompatible context. For the common case
+    // (no prior WebGL renderer on this canvas) update the label so the user
+    // can see Auto resolved to the built-in highway. For the WebGL-locked
+    // edge case the player stays blank (known limitation — same as manual
+    // picker swaps); the label is a best-effort hint, not a guarantee.
+    // Read from the DOM rather than hard-coding the name so a future rename
+    // of the default entry is automatically reflected.
+    if (hasSong) {
+        const defaultOpt = Array.from(sel.options).find(o => o.value === 'default');
+        _setAutoVizLabel(defaultOpt ? defaultOpt.text : null);
+    }
 }
 
 function formatTime(s) { return `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`; }

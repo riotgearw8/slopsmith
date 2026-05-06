@@ -394,6 +394,17 @@ function createHighway() {
         }
     }
 
+    function _emitVizReady() {
+        // Notify listeners that the custom renderer has fully initialised
+        // and is actively drawing (its sync init returned, or its async
+        // readyPromise resolved).  App.js uses this to update the Auto
+        // closed-state label only once the renderer is confirmed active.
+        if (window.slopsmith && typeof window.slopsmith.emit === 'function') {
+            try { window.slopsmith.emit('viz:renderer:ready', {}); }
+            catch (e) { console.error('viz:renderer:ready emit:', e); }
+        }
+    }
+
     function _setRenderer(r) {
         _destroyCurrentIfInited();
         // null/undefined reverts to default. Anything else must provide
@@ -466,6 +477,55 @@ function createHighway() {
         if (typeof _renderer.resize === 'function') {
             try { _renderer.resize(canvas.width, canvas.height); }
             catch (e) { console.error('renderer resize:', e); }
+        }
+        // Optional async-ready contract: if the renderer exposes a
+        // `readyPromise`, it initialises asynchronously and the promise
+        // settles when the renderer is actually drawing (resolve) or has
+        // failed without throwing during sync init (reject).
+        // On resolve  → emit viz:renderer:ready so the UI can reflect the
+        //               confirmed active renderer.
+        // On reject   → revert to default, emit viz:reverted (same path as
+        //               a sync init failure) so the UI and Auto label sync.
+        // If readyPromise is absent the sync init was all there was to do;
+        // emit viz:renderer:ready immediately.
+        const _installedRenderer = _renderer;
+        if (_installedRenderer !== _defaultRenderer) {
+            const rp = _installedRenderer.readyPromise;
+            if (rp && typeof rp.then === 'function') {
+                // Named handler for the rejection path so the async error
+                // contract is readable at a glance without unwrapping a long
+                // inline arrow function.
+                function _handleAsyncInitFailure(e) {
+                    if (_renderer !== _installedRenderer) return;
+                    console.error('renderer async init failure:', e);
+                    _destroyCurrentIfInited();
+                    _renderer = _defaultRenderer;
+                    _rendererDrawFailures = 0;
+                    _emitVizReverted('async-init-failure');
+                    if (canvas) {
+                        let defInitOk = typeof _defaultRenderer.init !== 'function';
+                        if (typeof _defaultRenderer.init === 'function') {
+                            try {
+                                _defaultRenderer.init(canvas, _makeBundle());
+                                defInitOk = true;
+                            } catch (e2) {
+                                console.error('default renderer init after async revert:', e2);
+                            }
+                        }
+                        _rendererInited = defInitOk;
+                        if (_rendererInited && typeof _defaultRenderer.resize === 'function') {
+                            try { _defaultRenderer.resize(canvas.width, canvas.height); }
+                            catch (e2) { console.error('default renderer resize after async revert:', e2); }
+                        }
+                    }
+                }
+                rp.then(
+                    () => { if (_renderer === _installedRenderer) _emitVizReady(); },
+                    _handleAsyncInitFailure
+                );
+            } else {
+                _emitVizReady();
+            }
         }
     }
 

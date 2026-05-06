@@ -4149,16 +4149,33 @@
                     _focusSubscribed = true;
                 }
 
+                // Async-ready contract (slopsmith#36 readyPromise). Resolves
+                // when Three.js loaded + scene initialised (_isReady = true).
+                // Rejects on any async failure so highway.js can revert.
+                let _resolveReady, _rejectReady;
+                this.readyPromise = new Promise((res, rej) => {
+                    _resolveReady = res;
+                    _rejectReady = rej;
+                });
+                // Shared rejection for superseded init cycles (destroy() or a
+                // newer init() started before this one completed). highway.js
+                // ignores the rejection when the renderer is no longer active.
+                const _rejectSuperseded = () => _rejectReady(new Error('superseded'));
+
                 loadThree().then(() => {
-                    if (_destroyed || _initToken !== myToken) return;
+                    if (_destroyed || _initToken !== myToken) {
+                        _rejectSuperseded();
+                        return;
+                    }
                     try {
                         nStr = resolveStringCount(bundle);
                         _invertedForBoard = _invertedCached;
-                        if (!initScene()) { _unsubscribeFocus(); return; }
+                        if (!initScene()) { _unsubscribeFocus(); _rejectReady(new Error('initScene failed')); return; }
                         const sz = canvasSize(highwayCanvas);
                         // Mark ready before RAF so any resize(w,h) calls that arrive
                         // in the meantime (e.g. from sizeCanvases()) are applied directly.
                         _isReady = true;
+                        _resolveReady();
                         _updateFocusState();
                         if (sz.w > 0 && sz.h > 0) {
                             applySize(sz.w, sz.h);
@@ -4177,11 +4194,16 @@
                         console.error('[3D-Hwy] init .then() threw:', e);
                         _isReady = false;
                         _unsubscribeFocus(); teardown();
+                        _rejectReady(e);
                     }
                 }).catch(e => {
-                    if (_initToken !== myToken || _destroyed) return;
+                    if (_initToken !== myToken || _destroyed) {
+                        _rejectSuperseded();
+                        return;
+                    }
                     console.error('[3D-Hwy] Three.js unavailable:', e);
                     _unsubscribeFocus();
+                    _rejectReady(e);
                 });
             },
 
