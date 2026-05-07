@@ -2670,6 +2670,15 @@ function _readSongVolume() {
 }
 audio.volume = _readSongVolume() / 100;
 
+function _adjustSongVolume(delta) {
+    const audioApi = window.slopsmith?.audio;
+    if (!audioApi) return;
+    const current = audioApi.readSongVolume?.() ?? 80;
+    const next = Math.max(0, Math.min(100, Math.round(current + delta)));
+    const songFader = audioApi.getFaders?.().find(f => f.id === 'song');
+    if (songFader) songFader.setValue(next);
+}
+
 // Re-sync audio.volume from the persisted setting whenever a new source
 // finishes loading metadata. Belt + suspenders — some combinations of plugin
 // audio-graph routing and media-element swaps reset audio.volume to 1.0
@@ -4121,6 +4130,41 @@ registerShortcut({
     description: 'Offset audio forward (Shift: 50ms, else 10ms)',
     scope: 'player',
     handler: (e) => nudgeAvOffsetMs(e.shiftKey ? 50 : 10)
+});
+
+registerShortcut({
+    key: '+',
+    description: 'Volume up',
+    scope: 'player',
+    modifiers: { ctrl: false, alt: false, meta: false },
+    handler: () => _adjustSongVolume(1)
+});
+
+// Layout-portable alias — matches the physical "=/+" key (e.code === 'Equal')
+// regardless of keyboard layout or shift state, so non-US layouts that
+// don't map Shift+= to '+' still work.
+registerShortcut({
+    key: 'Equal',
+    description: 'Volume up',
+    scope: 'player',
+    modifiers: { ctrl: false, alt: false, meta: false },
+    handler: () => _adjustSongVolume(1)
+});
+
+registerShortcut({
+    key: '-',
+    description: 'Volume down',
+    scope: 'player',
+    modifiers: { ctrl: false, alt: false, meta: false },
+    handler: () => _adjustSongVolume(-1)
+});
+
+registerShortcut({
+    key: 'Minus',
+    description: 'Volume down',
+    scope: 'player',
+    modifiers: { ctrl: false, alt: false, meta: false },
+    handler: () => _adjustSongVolume(-1)
 });
 
 // ── Edit metadata modal ─────────────────────────────────────────────────
