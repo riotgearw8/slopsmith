@@ -317,3 +317,81 @@ def test_run_demucs_failure_with_no_output_yields_sentinel(tmp_path, monkeypatch
         sloppak_convert._run_demucs(full_ogg, tmp_path / "out", model="htdemucs_6s")
 
     assert "(no output)" in str(excinfo.value)
+
+
+# ── _run_demucs torchaudio.save shim bootstrap ──────────────────────────────
+# torchaudio>=2.11 routes .save() through save_with_torchcodec, which
+# requires torchcodec. _run_demucs spawns the demucs subprocess via
+# `python -c <bootstrap>` so that torchaudio.save is monkey-patched to
+# soundfile.write before demucs imports. These tests pin the wire-level
+# shape of that bootstrap so accidental refactors don't drop the shim.
+
+def test_run_demucs_uses_dash_c_bootstrap_with_extra_paths_arg(tmp_path, monkeypatch):
+    """cmd shape: [python, -c, <bootstrap>, <extra_paths_json>, demucs args...]."""
+    monkeypatch.setenv("CONFIG_DIR", str(tmp_path / "cfg"))
+    captured: dict = {}
+    monkeypatch.setattr(subprocess, "run", _stub_subprocess_run(captured))
+
+    full_ogg = tmp_path / "song.ogg"
+    full_ogg.write_bytes(b"")
+    with pytest.raises(RuntimeError):
+        sloppak_convert._run_demucs(full_ogg, tmp_path / "out", model="htdemucs_6s")
+
+    cmd = captured["cmd"]
+    # python interpreter, -c flag, bootstrap script, JSON-encoded extra_paths,
+    # then the demucs CLI args.
+    assert cmd[1] == "-c"
+    bootstrap = cmd[2]
+    # extra_paths arg is JSON; round-trip parses to a list of strings.
+    import json as _json
+    parsed = _json.loads(cmd[3])
+    assert isinstance(parsed, list) and all(isinstance(p, str) for p in parsed)
+    # demucs args follow.
+    assert cmd[4:7] == ["-n", "htdemucs_6s", "-o"]
+    # Bootstrap reads sys.argv[1] (the JSON), strips it, then runs demucs.
+    assert "sys.argv[1]" in bootstrap
+    assert "runpy.run_module" in bootstrap
+
+
+def test_run_demucs_bootstrap_installs_torchaudio_save_shim(tmp_path, monkeypatch):
+    """Bootstrap must monkey-patch torchaudio.save -> soundfile.write so the
+    demucs subprocess does not depend on torchcodec being importable. This
+    test pins the patch wiring so a refactor that drops the shim is caught."""
+    monkeypatch.setenv("CONFIG_DIR", str(tmp_path / "cfg"))
+    captured: dict = {}
+    monkeypatch.setattr(subprocess, "run", _stub_subprocess_run(captured))
+
+    full_ogg = tmp_path / "song.ogg"
+    full_ogg.write_bytes(b"")
+    with pytest.raises(RuntimeError):
+        sloppak_convert._run_demucs(full_ogg, tmp_path / "out", model="htdemucs_6s")
+
+    bootstrap = captured["cmd"][2]
+    # Imports the right libs.
+    assert "import torchaudio" in bootstrap
+    assert "import soundfile" in bootstrap or "soundfile as _sf" in bootstrap
+    # Defines a replacement and assigns it.
+    assert "def _ta_save" in bootstrap
+    assert "_ta.save = _ta_save" in bootstrap
+    # Honors channels_first kwarg (so callers passing False are not corrupted).
+    assert "channels_first" in bootstrap
+    # Soundfile is what actually does the write.
+    assert "_sf.write" in bootstrap
+
+
+def test_run_demucs_bootstrap_runs_demucs_main(tmp_path, monkeypatch):
+    """Bootstrap must end by handing control to demucs's __main__ via runpy
+    with run_name='__main__', otherwise demucs's CLI argparse never fires."""
+    monkeypatch.setenv("CONFIG_DIR", str(tmp_path / "cfg"))
+    captured: dict = {}
+    monkeypatch.setattr(subprocess, "run", _stub_subprocess_run(captured))
+
+    full_ogg = tmp_path / "song.ogg"
+    full_ogg.write_bytes(b"")
+    with pytest.raises(RuntimeError):
+        sloppak_convert._run_demucs(full_ogg, tmp_path / "out", model="htdemucs_6s")
+
+    bootstrap = captured["cmd"][2]
+    assert "runpy.run_module" in bootstrap
+    assert "demucs" in bootstrap
+    assert "run_name='__main__'" in bootstrap or 'run_name="__main__"' in bootstrap

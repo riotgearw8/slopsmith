@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Settings page restructured into separate "Slopsmith" (core) and "Plugins" sections, with each plugin's settings rendered as a collapsible panel (collapsed by default). "Plugin Updates" moved into the Plugins section.
 - **Lyrics Sync** is now a redirect stub. Its alignment + save endpoints moved into the new Lyrics Karaoke plugin alongside the pitch extraction. Existing nav entries and bookmarks land on a "moved" page that auto-redirects to the merged plugin.
 
+### Fixed
+- Demucs stem split failing on Windows desktop with `OSError: Could not load this library: libtorchcodec_core4.dll` or `ImportError: TorchCodec is required for save_with_torchcodec`. The demucs subprocess now bootstraps a `torchaudio.save` → `soundfile.write` shim before importing demucs, sidestepping the torchcodec dependency entirely. The override stays in place across torchaudio versions — soundfile's WAV writes are behaviorally equivalent for demucs's float32 outputs.
+
 ### Migration notes
 - The library filters depend on three new columns (`stem_ids`, `tuning_name`, `tuning_sort_key`) that are populated as songs are scanned. If filters look empty after upgrading, run **Settings → Full Rescan** to repopulate; alternatively the periodic background rescan picks them up over time.
 

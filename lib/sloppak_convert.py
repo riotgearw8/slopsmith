@@ -391,11 +391,43 @@ def _run_demucs(full_ogg: Path, out_dir: Path, model: str) -> Path:
         extra_paths + ([env["PYTHONPATH"]] if env.get("PYTHONPATH") else [])
     )
     env["PYTHONPATH"] = merged
+    # torchaudio>=2.11 routes .save() through save_with_torchcodec, which
+    # requires torchcodec. The desktop bundle's torchcodec native shims can't
+    # load against the vgmstream-patched FFmpeg DLLs we ship (see PATH-prepend
+    # rationale above), so the save call dies with OSError; on installs where
+    # torchcodec was dropped from requirements, .save() raises ImportError.
+    # Redirect .save() to soundfile before demucs imports so demucs's per-stem
+    # WAV writes work regardless of torchcodec's state. soundfile is NOT a
+    # transitive demucs dep — the in-app converter plugin (sloppak_converter
+    # >= 1.0.4) ships it via its own requirements.txt, and any other consumer
+    # of this module must do the same. The override stays in place even on
+    # torchaudio versions that wouldn't need it — soundfile's WAV writes are
+    # behaviorally equivalent for demucs's float32 outputs.
     bootstrap = (
-        "import sys, json, runpy; "
-        "sys.path[:0] = json.loads(sys.argv[1]); "
-        "sys.argv = [sys.argv[0]] + sys.argv[2:]; "
-        "runpy.run_module('demucs', run_name='__main__')"
+        "import sys, json, runpy\n"
+        "sys.path[:0] = json.loads(sys.argv[1])\n"
+        "sys.argv = [sys.argv[0]] + sys.argv[2:]\n"
+        "import torchaudio as _ta, soundfile as _sf, numpy as _np\n"
+        "def _ta_save(uri, src, sample_rate, *_a, **_kw):\n"
+        # Honor channels_first (torchaudio default True). demucs calls with
+        # the default; third-party callers may not.
+        "    _cf = _kw.pop('channels_first', True)\n"
+        "    a = src.detach().cpu().numpy() if hasattr(src, 'detach') else _np.asarray(src)\n"
+        "    if a.ndim == 2 and _cf: a = a.T\n"
+        # Pick subtype that preserves bit depth: float32 -> FLOAT,
+        # float64 -> DOUBLE (avoid silent 32-bit downcast), int32 ->
+        # PCM_32, otherwise PCM_16.
+        "    if a.dtype == _np.float64:\n"
+        "        _st = 'DOUBLE'\n"
+        "    elif a.dtype.kind == 'f':\n"
+        "        _st = 'FLOAT'\n"
+        "    elif a.dtype == _np.int32:\n"
+        "        _st = 'PCM_32'\n"
+        "    else:\n"
+        "        _st = 'PCM_16'\n"
+        "    _sf.write(str(uri), a, int(sample_rate), subtype=_st)\n"
+        "_ta.save = _ta_save\n"
+        "runpy.run_module('demucs.__main__', run_name='__main__', alter_sys=True)\n"
     )
     cmd = [sys.executable, "-c", bootstrap, json.dumps(extra_paths),
            "-n", model, "-o", str(out_dir), str(full_ogg)]
